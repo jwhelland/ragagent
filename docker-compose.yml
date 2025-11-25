@@ -1,0 +1,142 @@
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - EMBEDDINGS_ENDPOINT=http://embeddings/embed
+    ports:
+      - "8000:8000"
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      embeddings:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - ./:/app
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c '</dev/tcp/127.0.0.1/6333' || exit 1",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5.23.0
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-neo4j}
+      - NEO4J_server_memory_pagecache_size=${NEO4J_PAGECACHE_SIZE:-2G}
+      - NEO4J_server_memory_heap_max__size=${NEO4J_HEAP_MAX_SIZE:-1G}
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+    ports:
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./docker/neo4j/init:/init:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "cypher-shell -u \"${NEO4J_USER:-neo4j}\" -p \"${NEO4J_PASSWORD:-neo4j}\" 'RETURN 1' || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+
+  neo4j-init:
+    image: neo4j:5.23.0
+    depends_on:
+      neo4j:
+        condition: service_healthy
+    entrypoint: ["bash", "/init/run_cypher.sh"]
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-neo4j}
+    volumes:
+      - ./docker/neo4j/init:/init:ro
+
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    platform: linux/amd64
+    environment:
+      - MODEL_ID=intfloat/e5-large-v2
+      - DEFAULT_MAX_BATCH_TOKENS=8192
+      - HF_ENDPOINT=https://huggingface.co
+      - HUGGINGFACE_HUB_CACHE=/data
+      - HF_HOME=/data
+      # - HF_HUB_OFFLINE=1
+      # - RUST_LOG=debug
+      # - RUST_BACKTRACE=full
+    ports:
+      - "8080:80"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - embeddings_cache:/data
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/app/Dockerfile
+    command: ["sleep", "infinity"]
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - NEO4J_URI=bolt://neo4j:7687
+      - EMBEDDINGS_ENDPOINT=http://embeddings/embed
+      - DOCLING_ARTIFACTS_PATH=/data/docling_models
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      embeddings:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - docling_models:/data/docling_models
+
+volumes:
+  qdrant_storage:
+  neo4j_data:
+  neo4j_logs:
+  embeddings_cache:
+  docling_models:
+
+# GPU note: To enable GPU for OCR or models, add the following to the service:
+# deploy:
+#   resources:
+#     reservations:
+#       devices:
+#         - capabilities: ["gpu"]

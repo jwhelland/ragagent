@@ -1,0 +1,48 @@
+[project]
+name = "ragagent"
+version = "0.1.0"
+description = "A production-ready Retrieval-Augmented Generation system with strict citation tracking, hybrid vector+graph retrieval, and comprehensive PDF ingestion pipeline."
+readme = "README.md"
+requires-python = ">=3.13.1"
+dependencies = [
+    # Core
+    "openai>=1.50.0",
+    "fastapi>=0.114.0",
+    "uvicorn[standard]>=0.30.0",
+    # Vector & Graph
+    "qdrant-client>=1.8.0",
+    "neo4j>=5.23.0",
+    "graphiti-core>=0.1.0",
+    # PDFs & OCR
+    "docling>=1.0.0",
+    "easyocr>=1.7.1",
+    "pymupdf>=1.24.9",
+    "pdfplumber>=0.11.4",
+    # NLP
+    "spacy>=3.7.2",
+    # Config & utils
+    "pydantic>=2.8.2",
+    "pydantic-settings>=2.4.0",
+    "python-dotenv>=1.0.1",
+    "tenacity>=9.0.0",
+    # Logging & tracing
+    "structlog>=24.4.0",
+    "opentelemetry-api>=1.26.0",
+    "opentelemetry-sdk>=1.26.0",
+    "opentelemetry-instrumentation-fastapi>=0.47b0",
+    "opentelemetry-exporter-otlp>=1.26.0",
+    # Evaluation (optional)
+    "datasets>=3.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["ragagent*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+]

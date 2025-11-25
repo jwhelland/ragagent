@@ -1,0 +1,2 @@
+{"question": "How does the ingestion pipeline handle table content extracted from PDFs?", "answers": ["tables are chunked separately", "table markdown chunks"], "guidance": "Focus on Docling + table preservation details.", "metadata": {"type": "ingestion"}}
+{"question": "Which services run inside docker compose to support hybrid retrieval?", "answers": ["app, qdrant, neo4j", "embeddings service"], "metadata": {"type": "infrastructure"}}
