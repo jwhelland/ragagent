@@ -15,6 +15,7 @@ from ..embeddings.client import EmbeddingsClient
 from ..graph.store import GraphStore
 from ..logging_setup import get_logger
 from ..nlp.keywords import extract_entities_and_phrases
+from ..nlp.relations import LLMRelationExtractor, is_trigger_chunk
 from ..vectorstore.qdrant_store import QdrantStore
 from .extract import extract_pdf
 
@@ -91,62 +92,121 @@ def process_pdf(
         text = page.get("text", "")
         # text chunks
         for cidx, ch in enumerate(chunk_text(text)):
-            chunks.append({
-                "doc_id": doc_id,
-                "sha256": sha,
-                "page": page_num,
-                "chunk_id": f"{doc_id}:{page_num}:{cidx}",
-                "text": ch,
-                "source_path": str(pdf_path),
-            })
+            chunks.append(
+                {
+                    "doc_id": doc_id,
+                    "sha256": sha,
+                    "page": page_num,
+                    "chunk_id": f"{doc_id}:{page_num}:{cidx}",
+                    "text": ch,
+                    "source_path": str(pdf_path),
+                }
+            )
         # table chunks (as markdown if available)
         for t in page.get("tables", []) or []:
             table_id = t.get("table_id")
             ttext = t.get("markdown") or ""
             if not ttext.strip():
                 continue
-            chunks.append({
-                "doc_id": doc_id,
-                "sha256": sha,
-                "page": page_num,
-                "chunk_id": f"{table_id}",
-                "text": ttext,
-                "source_path": str(pdf_path),
-                "table_id": table_id,
-            })
+            chunks.append(
+                {
+                    "doc_id": doc_id,
+                    "sha256": sha,
+                    "page": page_num,
+                    "chunk_id": f"{table_id}",
+                    "text": ttext,
+                    "source_path": str(pdf_path),
+                    "table_id": table_id,
+                }
+            )
 
     if not chunks:
         logger.warning("no_chunks_generated", doc_id=doc_id)
         return 0
 
-    # Optional NER/keyphrases for graph linking
+    # Optional NER/keyphrases for graph linking + selective LLM relations
+    llm_rel_enabled = bool(settings.llm_relations_enabled) and bool(
+        settings.openai_api_key
+    )
+    llm_extractor: LLMRelationExtractor | None = None
+    if llm_rel_enabled:
+        llm_extractor = LLMRelationExtractor(
+            model=settings.llm_relations_model,
+            max_relations=settings.llm_relations_max_relations,
+        )
     for c in chunks:
-        ents, phrases = extract_entities_and_phrases(c["text"])  # lightweight heuristics
+        ents, phrases = extract_entities_and_phrases(
+            c["text"]
+        )  # lightweight heuristics
         c["entities"] = ents
         c["keyphrases"] = phrases
+        # Selectively run LLM extraction only for likely high-value chunks
+        if llm_extractor and is_trigger_chunk(c["text"]):
+            triples = llm_extractor.extract(c["text"], ents)
+            if triples:
+                c["llm_relations"] = [
+                    {
+                        "source": t.source,
+                        "type": t.type,
+                        "target": t.target,
+                        "confidence": float(getattr(t, "confidence", 0.6) or 0.6),
+                        "justification": t.justification,
+                    }
+                    for t in triples
+                ]
+            else:
+                c["llm_relations"] = []
 
     texts = [c["text"] for c in chunks]
-    with tracer.start_as_current_span("ingest.embed", attributes={"chunks": len(chunks)}):
+    with tracer.start_as_current_span(
+        "ingest.embed", attributes={"chunks": len(chunks)}
+    ):
         embeddings = _embed_with_retry(embedder, texts)
 
-    with tracer.start_as_current_span("ingest.upsert_vector", attributes={"chunks": len(chunks)}):
+    with tracer.start_as_current_span(
+        "ingest.upsert_vector", attributes={"chunks": len(chunks)}
+    ):
         vector_store.upsert(chunks, embeddings)
 
     with tracer.start_as_current_span("ingest.graph_update"):
         graph.upsert_document(doc_id=doc_id, sha256=sha, path=str(pdf_path))
         for c in chunks:
-            graph.upsert_section(doc_id=doc_id, page=c["page"], chunk_id=c["chunk_id"])
-            graph.link_document_section(doc_id=doc_id, chunk_id=c["chunk_id"])
+            chunk_id = c["chunk_id"]
+            page_num = c.get("page")
+            graph.upsert_section(doc_id=doc_id, page=page_num, chunk_id=chunk_id)
+            graph.link_document_section(doc_id=doc_id, chunk_id=chunk_id)
             graph.add_episode_for_chunk(
-                name=c["chunk_id"],
+                name=chunk_id,
                 body=c["text"],
                 doc_id=doc_id,
-                page=c.get("page"),
+                page=page_num,
                 source_desc="PDF chunk (text/table)",
             )
             for e in c.get("entities", [])[:10]:
                 graph.upsert_entity(e)
-                graph.link_section_entity(chunk_id=c["chunk_id"], key=e)
+                graph.link_section_entity(chunk_id=chunk_id, key=e)
+
+            # Persist LLM relations (if any)
+            for t in c.get("llm_relations", []) or []:
+                src = t.get("source")
+                tgt = t.get("target")
+                rtype = t.get("type")
+                if not src or not tgt or not rtype:
+                    continue
+                # ensure nodes and mention links exist
+                graph.upsert_entity(src)
+                graph.upsert_entity(tgt)
+                graph.link_section_entity(chunk_id=chunk_id, key=src)
+                graph.link_section_entity(chunk_id=chunk_id, key=tgt)
+                props = {
+                    "source": "llm",
+                    "confidence": float(t.get("confidence", 0.6) or 0.6),
+                    "justification": t.get("justification", "")[:500],
+                    "chunk_id": chunk_id,
+                    "doc_id": doc_id,
+                    "page": page_num,
+                }
+                graph.upsert_entity_relation(src, rtype, tgt, props)
 
     logger.info("ingest_done", doc_id=doc_id, chunks=len(chunks))
     return len(chunks)
@@ -155,8 +215,18 @@ def process_pdf(
 def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Batch ingest PDFs")
     parser.add_argument("input_dir", type=Path, help="Directory containing PDFs")
-    parser.add_argument("--out", type=Path, default=Path("data/processed"), help="Artifacts output directory")
-    parser.add_argument("--manifest", type=Path, default=Path("data/manifest.json"), help="Idempotency manifest path")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("data/processed"),
+        help="Artifacts output directory",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("data/manifest.json"),
+        help="Idempotency manifest path",
+    )
     args = parser.parse_args(argv)
 
     ensure_dir(args.out)

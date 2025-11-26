@@ -170,16 +170,18 @@ def agent(
 
 def test_run_calls_vector_retrieval(agent, mock_vector_retriever):
     """run() calls vector retriever with question."""
-    agent.run("What is the answer?")
+    agent.run("What is the answer?", top_k=8)
 
-    mock_vector_retriever.retrieve.assert_called_once_with("What is the answer?")
+    mock_vector_retriever.retrieve.assert_called_once_with(
+        query="What is the answer?", top_k=8
+    )
 
 
 def test_run_calls_graph_expansion(agent, mock_graph_retriever, mock_vector_retriever):
     """run() calls graph retriever with vector results."""
     vector_result = mock_vector_retriever.retrieve.return_value
 
-    agent.run("What is the answer?")
+    agent.run("What is the answer?", top_k=8)
 
     mock_graph_retriever.expand.assert_called_once()
     call_args = mock_graph_retriever.expand.call_args
@@ -195,14 +197,14 @@ def test_run_builds_context(
     vector_chunks = mock_vector_retriever.retrieve.return_value.chunks
     graph_chunks = mock_graph_retriever.expand.return_value
 
-    agent.run("What is the answer?")
+    agent.run("What is the answer?", top_k=8)
 
     mock_context_assembler.build.assert_called_once_with(vector_chunks, graph_chunks)
 
 
 def test_run_calls_llm_with_context(agent, mock_openai_client, mock_context_assembler):
     """run() calls OpenAI with system prompt, user prompt, and context."""
-    agent.run("What is the answer?")
+    agent.run("What is the answer?", top_k=8)
 
     mock_openai_client.chat.completions.create.assert_called_once()
     call_kwargs = mock_openai_client.chat.completions.create.call_args.kwargs
@@ -218,7 +220,7 @@ def test_run_calls_llm_with_context(agent, mock_openai_client, mock_context_asse
 
 def test_run_verifies_answer(agent, mock_verifier, mock_context_assembler):
     """run() verifies answer against context."""
-    result = agent.run("What is the answer?")
+    result = agent.run("What is the answer?", top_k=8)
 
     mock_verifier.verify.assert_called_once()
     call_args = mock_verifier.verify.call_args
@@ -228,7 +230,7 @@ def test_run_verifies_answer(agent, mock_verifier, mock_context_assembler):
 
 def test_run_returns_agent_response(agent):
     """run() returns AgentResponse with all fields populated."""
-    result = agent.run("What is the answer?")
+    result = agent.run("What is the answer?", top_k=8)
 
     assert isinstance(result, AgentResponse)
     assert result.answer == "This is the answer citing [S1] and [S2]."
@@ -244,7 +246,7 @@ def test_run_raises_on_no_vector_results(agent, mock_vector_retriever):
     mock_vector_retriever.retrieve.return_value.chunks = []
 
     with pytest.raises(ValueError, match="no_vector_results"):
-        agent.run("What is the answer?")
+        agent.run("What is the answer?", top_k=8)
 
 
 def test_run_accepts_history(agent, mock_openai_client):
@@ -254,7 +256,7 @@ def test_run_accepts_history(agent, mock_openai_client):
         {"role": "assistant", "content": "Previous answer"},
     ]
 
-    agent.run("Follow-up question?", history=history)
+    agent.run("Follow-up question?", top_k=8, history=history)
 
     messages = mock_openai_client.chat.completions.create.call_args.kwargs["messages"]
     assert len(messages) == 4
@@ -268,7 +270,11 @@ def test_run_accepts_history(agent, mock_openai_client):
 
 def test_run_accepts_guidance(agent, mock_openai_client):
     """run() includes guidance in user prompt."""
-    agent.run("What is the answer?", guidance="Be concise and focus on key points.")
+    agent.run(
+        "What is the answer?",
+        top_k=8,
+        guidance="Be concise and focus on key points.",
+    )
 
     messages = mock_openai_client.chat.completions.create.call_args.kwargs["messages"]
     user_message = messages[-1]["content"]
@@ -378,7 +384,7 @@ def test_run_handles_empty_answer(agent, mock_openai_client):
         0
     ].message.content = "  \n  "
 
-    result = agent.run("What is the answer?")
+    result = agent.run("What is the answer?", top_k=8)
 
     assert result.answer == ""
 
@@ -389,7 +395,7 @@ def test_run_strips_answer_whitespace(agent, mock_openai_client):
         0
     ].message.content = "\n  Answer with whitespace  \n"
 
-    result = agent.run("What is the answer?")
+    result = agent.run("What is the answer?", top_k=8)
 
     assert result.answer == "Answer with whitespace"
 
@@ -400,7 +406,7 @@ def test_run_handles_none_answer(agent, mock_openai_client):
         0
     ].message.content = None
 
-    result = agent.run("What is the answer?")
+    result = agent.run("What is the answer?", top_k=8)
 
     assert result.answer == ""
 
@@ -422,7 +428,7 @@ def test_run_max_graph_results_configurable(
         max_graph_results=10,
     )
 
-    agent.run("Question")
+    agent.run("Question", top_k=8)
 
     call_kwargs = mock_graph_retriever.expand.call_args.kwargs
     assert call_kwargs["max_results"] == 10

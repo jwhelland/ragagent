@@ -356,3 +356,48 @@ def test_hydrate_rows_stops_at_double_max_results(retriever, mock_vector_store):
     mock_vector_store.fetch_by_ids.assert_called_once()
     fetch_ids = mock_vector_store.fetch_by_ids.call_args[0][0]
     assert len(fetch_ids) <= 10
+
+
+def test_expand_uses_entity_relations_when_enabled(
+    mock_extract_entities, mock_graph_store, mock_vector_store, vector_result
+):
+    """expand() can prioritize entity-relation graph edges."""
+    # Enable entity-relation expansion
+    retriever = GraphRetriever(
+        mock_graph_store,
+        mock_vector_store,
+        seed_limit=4,
+        related_per_seed=2,
+        fallback_entity_terms=5,
+        use_entity_relations=True,
+        relation_types=["MENTIONS", "CO_OCCURS"],
+    )
+
+    # Relation-based rows plus plain co-mentions
+    mock_graph_store.get_sections_via_entity_relations.return_value = [
+        {
+            "chunk_id": "rel_1",
+            "doc_id": "doc_rel",
+            "entities": ["EntityX"],
+            "relation_types": ["MENTIONS"],
+        }
+    ]
+    mock_graph_store.get_related_sections.return_value = [
+        {"chunk_id": "co_1", "doc_id": "doc_co", "entities": []}
+    ]
+    mock_vector_store.fetch_by_ids.return_value = {
+        "rel_1": {"text": "Rel text", "doc_id": "doc_rel"},
+        "co_1": {"text": "Co text", "doc_id": "doc_co"},
+    }
+
+    result = retriever.expand("query", vector_result, max_results=4)
+
+    # Relation-based API is invoked with seed ids and relation_types
+    call_args = mock_graph_store.get_sections_via_entity_relations.call_args
+    seed_ids = set(call_args[0][0])
+    assert seed_ids == {f"seed_{i}" for i in range(4)}
+    assert call_args.kwargs["relation_types"] == ["MENTIONS", "CO_OCCURS"]
+
+    # Relation-based row is prioritized and relation_types propagated to metadata
+    assert result[0].chunk_id == "rel_1"
+    assert result[0].metadata.get("relation_types") == ["MENTIONS"]

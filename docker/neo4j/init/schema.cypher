@@ -5,9 +5,11 @@
 CREATE CONSTRAINT document_id IF NOT EXISTS
 FOR (d:Document) REQUIRE d.id IS UNIQUE;
 
-// Sections
+ // Sections
 CREATE INDEX section_doc_page IF NOT EXISTS
 FOR (s:Section) ON (s.document_id, s.page);
+CREATE CONSTRAINT section_chunk_id IF NOT EXISTS
+FOR (s:Section) REQUIRE s.chunk_id IS UNIQUE;
 
 // Entities
 CREATE CONSTRAINT entity_key IF NOT EXISTS

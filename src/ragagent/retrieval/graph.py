@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Sequence
+from typing import List, Sequence, Optional
 
 from ..graph.store import GraphStore
 from ..logging_setup import get_logger
@@ -36,6 +36,8 @@ class GraphRetriever:
         seed_limit: int = 4,
         related_per_seed: int = 2,
         fallback_entity_terms: int = 5,
+        use_entity_relations: bool = False,
+        relation_types: Optional[List[str]] = None,
     ) -> None:
         """
         Initialize a GraphRetriever.
@@ -54,6 +56,8 @@ class GraphRetriever:
         self._seed_limit = seed_limit
         self._related_per_seed = related_per_seed
         self._fallback_entity_terms = fallback_entity_terms
+        self._use_entity_relations = use_entity_relations
+        self._relation_types = relation_types
 
     def expand(
         self,
@@ -86,6 +90,14 @@ class GraphRetriever:
         seeds = vector_result.chunks[: self._seed_limit]
         seed_ids = {chunk.chunk_id for chunk in seeds}
         related_rows = self._graph.get_related_sections(list(seed_ids), limit_per_seed=self._related_per_seed)
+        if self._use_entity_relations:
+            rel_rows = self._graph.get_sections_via_entity_relations(
+                list(seed_ids),
+                relation_types=self._relation_types,
+                limit_per_seed=self._related_per_seed,
+            )
+            # Prioritize relation-driven rows ahead of plain co-mentions
+            related_rows = (rel_rows or []) + related_rows
 
         if len(related_rows) < max_results:
             entities, phrases = extract_entities_and_phrases(question)
@@ -151,6 +163,12 @@ class GraphRetriever:
                 continue
             entities = row.get("entities") or payload.get("entities") or []
             score = 0.35 + 0.05 * min(len(entities), 5)
+            meta = {
+                "graph_rank": rank,
+                "shared_entities": entities,
+            }
+            if "relation_types" in row:
+                meta["relation_types"] = row.get("relation_types") or []
             chunk = RetrievedChunk(
                 chunk_id=chunk_id,
                 doc_id=row.get("doc_id") or payload.get("doc_id", "unknown"),
@@ -162,10 +180,7 @@ class GraphRetriever:
                 origin="graph",
                 seed_chunk_id=row.get("seed_chunk_id"),
                 entities=list(entities),
-                metadata={
-                    "graph_rank": rank,
-                    "shared_entities": entities,
-                },
+                metadata=meta,
             )
             results.append(chunk)
             if len(results) >= max_results:

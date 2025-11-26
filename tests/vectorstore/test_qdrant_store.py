@@ -3,7 +3,7 @@ from unittest.mock import Mock, call
 import pytest
 from qdrant_client.http.models import Filter, PointStruct, ScoredPoint
 
-from ragagent.vectorstore.qdrant_store import QdrantStore
+from ragagent.vectorstore.qdrant_store import QdrantStore, _point_id_from_chunk_id
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def test_upsert_creates_point_structs(store, mock_qdrant_client):
 
     points = call_args.kwargs["points"]
     assert len(points) == 1
-    assert points[0].id == "c1"
+    assert points[0].id == _point_id_from_chunk_id("c1")
     assert points[0].vector == [0.1] * 1024
     assert points[0].payload["doc_id"] == "doc1"
     assert points[0].payload["page"] == 5
@@ -122,9 +122,9 @@ def test_upsert_multiple_chunks(store, mock_qdrant_client):
 
     points = mock_qdrant_client.upsert.call_args.kwargs["points"]
     assert len(points) == 3
-    assert points[0].id == "c0"
-    assert points[1].id == "c1"
-    assert points[2].id == "c2"
+    assert points[0].id == _point_id_from_chunk_id("c0")
+    assert points[1].id == _point_id_from_chunk_id("c1")
+    assert points[2].id == _point_id_from_chunk_id("c2")
 
 
 def test_search_calls_client_with_vector(store, mock_qdrant_client):
@@ -208,12 +208,18 @@ def test_fetch_by_ids_calls_retrieve(store, mock_qdrant_client):
 
     store.fetch_by_ids(ids)
 
-    mock_qdrant_client.retrieve.assert_called_once_with(
-        collection_name="test_collection",
-        ids=ids,
-        with_payload=True,
-        with_vectors=False,
-    )
+    call_kwargs = mock_qdrant_client.retrieve.call_args.kwargs
+    assert call_kwargs["collection_name"] == "test_collection"
+    # Client sees internal numeric IDs derived from chunk_ids
+    numeric_ids = call_kwargs["ids"]
+    expected_ids = [
+        _point_id_from_chunk_id("c1"),
+        _point_id_from_chunk_id("c2"),
+        _point_id_from_chunk_id("c3"),
+    ]
+    assert numeric_ids == expected_ids
+    assert call_kwargs["with_payload"] is True
+    assert call_kwargs["with_vectors"] is False
 
 
 def test_fetch_by_ids_returns_payload_dict(store, mock_qdrant_client):
@@ -225,8 +231,8 @@ def test_fetch_by_ids_returns_payload_dict(store, mock_qdrant_client):
             self.payload = payload
 
     mock_qdrant_client.retrieve.return_value = [
-        MockRecord(id="c1", payload={"text": "First"}),
-        MockRecord(id="c2", payload={"text": "Second"}),
+        MockRecord(id=_point_id_from_chunk_id("c1"), payload={"text": "First"}),
+        MockRecord(id=_point_id_from_chunk_id("c2"), payload={"text": "Second"}),
     ]
 
     result = store.fetch_by_ids(["c1", "c2"])
@@ -254,7 +260,7 @@ def test_fetch_by_ids_handles_null_payload(store, mock_qdrant_client):
             self.payload = payload
 
     mock_qdrant_client.retrieve.return_value = [
-        MockRecord(id="c1", payload=None),
+        MockRecord(id=_point_id_from_chunk_id("c1"), payload=None),
     ]
 
     result = store.fetch_by_ids(["c1"])

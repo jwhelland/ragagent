@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str | None = None
 
+    # LLM Relations
+    llm_relations_enabled: bool = True
+    llm_relations_model: str = "gpt-4o-mini"
+    llm_relations_max_relations: int = 8
+
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: str | None = None

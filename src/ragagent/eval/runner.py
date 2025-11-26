@@ -40,7 +40,11 @@ def build_agent(enable_llm_verifier: bool = False) -> RetrievalAgent:
         password=settings.neo4j_password,
     )
     vector_retriever = VectorRetriever(qdrant_store, embedder, top_k=8)
-    graph_retriever = GraphRetriever(graph_store, qdrant_store)
+    graph_retriever = GraphRetriever(
+        graph_store,
+        qdrant_store,
+        use_entity_relations=True,
+    )
     context_builder = ContextAssembler()
 
     from openai import OpenAI
