@@ -1,0 +1,169 @@
+# LLM prompts for entity and relationship extraction
+
+entity_extraction:
+  system: |
+    You are an expert at extracting structured information from technical satellite documents.
+    Your task is to identify entities and classify them according to the provided schema.
+    Always extract entities with their full context and descriptions.
+
+  user_template: |
+    Extract all relevant entities from the following text. For each entity, provide:
+    1. Entity name (canonical form)
+    2. Entity type (from: SYSTEM, SUBSYSTEM, COMPONENT, PARAMETER, PROCEDURE, PROCEDURE_STEP, CONCEPT, STANDARD, ANOMALY, TABLE, FIGURE)
+    3. Description
+    4. Any aliases or abbreviations
+    5. Confidence score (0-1)
+
+    Text:
+    {chunk_text}
+
+    Document context:
+    - Title: {document_title}
+    - Section: {section_title}
+    - Page: {page_numbers}
+
+    Return a JSON array of entities with this structure:
+    {{
+      "entities": [
+        {{
+          "name": "canonical entity name",
+          "type": "ENTITY_TYPE",
+          "description": "detailed description",
+          "aliases": ["alias1", "alias2"],
+          "confidence": 0.95
+        }}
+      ]
+    }}
+
+relationship_extraction:
+  system: |
+    You are an expert at identifying relationships between entities in technical satellite documents.
+    Your task is to extract relationships that represent meaningful connections between entities.
+    Focus on structural, functional, and procedural relationships.
+
+  user_template: |
+    Extract relationships between entities from the following text. For each relationship, provide:
+    1. Source entity
+    2. Relationship type (from: PART_OF, CONTAINS, DEPENDS_ON, CONTROLS, MONITORS, PROVIDES_POWER_TO, SENDS_DATA_TO, REFERENCES, PRECEDES, REQUIRES_CHECK, AFFECTS, IMPLEMENTS, SIMILAR_TO, CAUSED_BY, MITIGATED_BY, REFERENCES_TABLE, REFERENCES_FIGURE, DEFINED_IN_TABLE, SHOWN_IN_FIGURE, CROSS_REFERENCES)
+    3. Target entity
+    4. Description
+    5. Confidence score (0-1)
+    6. Is bidirectional
+
+    Text:
+    {chunk_text}
+
+    Known entities in this chunk:
+    {entities_list}
+
+    Document context:
+    - Title: {document_title}
+    - Section: {section_title}
+
+    Return a JSON array of relationships:
+    {{
+      "relationships": [
+        {{
+          "source": "source entity name",
+          "type": "RELATIONSHIP_TYPE",
+          "target": "target entity name",
+          "description": "what this relationship means",
+          "confidence": 0.90,
+          "bidirectional": false
+        }}
+      ]
+    }}
+
+few_shot_examples:
+  entity_examples:
+    - text: "The Electrical Power Subsystem (EPS) manages battery charging and solar array deployment."
+      entities:
+        - name: "electrical_power_subsystem"
+          type: "SUBSYSTEM"
+          description: "Manages electrical power generation, storage, and distribution"
+          aliases: ["EPS", "Power Subsystem", "Electrical Power System"]
+          confidence: 0.95
+        - name: "battery_charging"
+          type: "PROCEDURE"
+          description: "Process of charging satellite batteries"
+          aliases: ["battery charge", "charging procedure"]
+          confidence: 0.90
+        - name: "solar_array"
+          type: "COMPONENT"
+          description: "Solar panel array for power generation"
+          aliases: ["solar panels", "photovoltaic array"]
+          confidence: 0.95
+
+  relationship_examples:
+    - text: "The battery depends on the solar array for charging during daylight passes."
+      relationships:
+        - source: "battery"
+          type: "DEPENDS_ON"
+          target: "solar_array"
+          description: "Battery requires solar array output for charging"
+          confidence: 0.95
+          bidirectional: false
+
+    - text: "The thermal control system monitors temperature sensors located in each subsystem."
+      relationships:
+        - source: "thermal_control_system"
+          type: "MONITORS"
+          target: "temperature_sensors"
+          description: "Thermal system monitors sensor readings"
+          confidence: 0.90
+          bidirectional: false
+
+table_figure_extraction:
+  system: |
+    You are an expert at extracting structured information from tables and figures in technical documents.
+    Your task is to identify tables and figures, extract their metadata, and understand their content.
+
+  user_template: |
+    Extract table and figure information from the following text:
+
+    Text:
+    {chunk_text}
+
+    For each table, provide:
+    - Caption/title
+    - Table number/identifier
+    - Column headers
+    - Summary of data
+    - Page number
+
+    For each figure, provide:
+    - Caption/title
+    - Figure number/identifier
+    - Type (diagram, chart, schematic, photo)
+    - Description of what it shows
+    - Page number
+
+    Return JSON:
+    {{
+      "tables": [
+        {{
+          "number": "Table 1",
+          "caption": "Power Budget Summary",
+          "headers": ["Subsystem", "Average Power (W)", "Peak Power (W)"],
+          "summary": "Power consumption for all subsystems",
+          "page": 15
+        }}
+      ],
+      "figures": [
+        {{
+          "number": "Figure 3",
+          "caption": "Thermal Control System Block Diagram",
+          "type": "diagram",
+          "description": "Shows thermal control flow and component interactions",
+          "page": 22
+        }}
+      ]
+    }}
+
+cross_reference_extraction:
+  patterns:
+    - 'see section (\d+\.?[\d\.]*)'
+    - 'refer to (?:section|chapter|appendix) (\d+\.?[\d\.]*)'
+    - 'as described in (?:section|chapter) (\d+\.?[\d\.]*)'
+    - 'defined in (?:section|chapter|appendix) (\d+\.?[\d\.]*)'
+    - 'see (?:table|figure) (\d+)'

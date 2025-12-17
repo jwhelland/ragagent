@@ -735,7 +735,7 @@ final_score = (
 **PDF Processing:**
 - `docling`: PDF parsing with layout analysis
 - `pytesseract` or `easyocr`: OCR capabilities
-- `PyPDF2`: PDF metadata extraction
+- `pypdf`: PDF metadata extraction
 
 **NLP and Entity Extraction:**
 - `spaCy` (v3.7+): NER and linguistic features
@@ -743,8 +743,8 @@ final_score = (
 - Custom spaCy pipeline components for domain terms
 
 **LLM Integration:**
-- `ollama-python`: Local LLM integration (Llama 3.1, Mistral)
-- `openai`: OpenAI API integration
+- `openai`: OpenAI API integration (or any OpenAI-compatible endpoint)
+- `anthropic`: Anthropic Messages API
 - `langchain`: Optional for structured output handling
 
 **Graph Database:**
@@ -952,8 +952,8 @@ QDRANT_PORT=6333
 QDRANT_API_KEY=optional
 
 # LLM Configuration
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.1:8b
+OPENAI_BASE_URL=https://api.openai.com/v1  # Point to OpenAI-compatible endpoint
+OPENAI_MODEL=gpt-4o-mini
 OPENAI_API_KEY=your_key_if_using_api
 ANTHROPIC_API_KEY=your_key_if_using_api
 
@@ -989,8 +989,9 @@ ingestion:
   text_rewriting:
     enabled: false  # Optional, disabled by default
     llm:
-      provider: ollama  # Can use different provider than extraction LLM
-      model: llama3.1:8b  # Can use different model than extraction
+      provider: openai  # Can use different provider than extraction LLM
+      base_url: https://api.openai.com/v1  # Point to OpenAI-compatible endpoint if self-hosting
+      model: gpt-4o-mini  # Can use different model than extraction
       temperature: 0.3  # Slightly higher for more natural rewriting
       max_tokens: 3000
     chunk_level: section  # section or subsection
@@ -1014,8 +1015,9 @@ extraction:
     custom_patterns: config/entity_patterns.jsonl
   
   llm:
-    provider: ollama  # ollama or openai
-    model: llama3.1:8b  # or gpt-4-turbo for openai
+    provider: openai  # OpenAI-compatible endpoint
+    base_url: https://api.openai.com/v1
+    model: gpt-4o-mini
     temperature: 0.1
     max_tokens: 2000
   
@@ -1076,9 +1078,10 @@ docker run -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password neo4j:latest
 # Start Qdrant
 docker run -p 6333:6333 qdrant/qdrant
 
-# Start Ollama (local LLM)
-ollama serve
-ollama pull llama3.1:8b
+# Configure OpenAI-compatible endpoint (api.openai.com or self-hosted)
+export OPENAI_BASE_URL=https://api.openai.com/v1
+export OPENAI_API_KEY=sk-...
+# For local servers, point OPENAI_BASE_URL to the local address (e.g., http://localhost:8000/v1)
 ```
 
 3. **Initialize Databases:**

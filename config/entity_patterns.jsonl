@@ -1,0 +1,7 @@
+{"label": "SYSTEM", "pattern": [{"LOWER": {"IN": ["power", "thermal", "attitude", "communications", "telemetry", "command", "propulsion", "guidance"]}}]}
+{"label": "SUBSYSTEM", "pattern": [{"LOWER": "eps"}]}
+{"label": "SUBSYSTEM", "pattern": [{"TEXT": {"REGEX": "^[A-Z]{2,4}$"}}]}
+{"label": "COMPONENT", "pattern": [{"LOWER": {"IN": ["battery", "sensor", "actuator", "transponder", "antenna", "thruster", "gyroscope", "accelerometer"]}}]}
+{"label": "PARAMETER", "pattern": [{"LOWER": {"IN": ["temperature", "voltage", "current", "pressure", "altitude", "velocity", "orientation"]}}, {"IS_DIGIT": true, "OP": "?"}]}
+{"label": "PROCEDURE", "pattern": [{"LOWER": {"IN": ["startup", "shutdown", "deployment", "calibration", "initialization", "test", "checkout"]}}]}
+{"label": "ANOMALY", "pattern": [{"LOWER": {"IN": ["failure", "fault", "error", "anomaly", "malfunction", "degradation"]}}]}

@@ -8,3 +8,54 @@ wheels/
 
 # Virtual environments
 .venv
+venv/
+env/
+
+# Environment variables
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data directories
+data/raw/*
+data/processed/*
+data/entities/*
+data/normalization/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/entities/.gitkeep
+!data/normalization/.gitkeep
+
+# Logs
+logs/
+*.log
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Docker volumes
+*.db
+neo4j_data/
+neo4j_logs/
+neo4j_import/
+qdrant_storage/
+
+# Temporary files
+*.tmp
+*.bak
+*.cache

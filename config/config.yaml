@@ -1,0 +1,158 @@
+ingestion:
+  pdf_parser:
+    ocr_enabled: true
+    preserve_layout: true
+    extract_tables: true
+    extract_figures: true
+    supported_formats: [".pdf"]
+
+  text_cleaning:
+    enabled: true
+    patterns_file: "config/cleaning_patterns.yaml"
+    remove_headers: true
+    remove_footers: true
+    remove_page_numbers: true
+    min_line_length: 3
+    normalize_whitespace: true
+    preserve_code_blocks: true
+    preserve_equations: true
+    preserve_technical_terms: true
+
+  text_rewriting:
+    enabled: false
+    llm:
+      provider: "openai"
+      base_url: "https://api.openai.com/v1"
+      model: "gpt-4o-mini"
+      temperature: 0.3
+      max_tokens: 3000
+    chunk_level: "section"
+    preserve_original: true
+    max_chunk_tokens: 2000
+    prompt_template: "config/rewriting_prompt.yaml"
+
+  chunking:
+    strategy: "hierarchical"
+    levels:
+      - "document"
+      - "section"
+      - "subsection"
+      - "paragraph"
+    max_tokens: 512
+    overlap_tokens: 50
+    min_chunk_size: 100
+
+extraction:
+  spacy:
+    model: "en_core_web_trf"
+    custom_patterns: "config/entity_patterns.jsonl"
+    batch_size: 100
+    confidence_threshold: 0.5
+
+  llm:
+    provider: "openai"
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+    temperature: 0.1
+    max_tokens: 2000
+    timeout: 60
+    retry_attempts: 3
+
+  entity_types:
+    - SYSTEM
+    - SUBSYSTEM
+    - COMPONENT
+    - PARAMETER
+    - PROCEDURE
+    - PROCEDURE_STEP
+    - CONCEPT
+    - DOCUMENT
+    - STANDARD
+    - ANOMALY
+    - TABLE
+    - FIGURE
+
+  relationship_types:
+    - PART_OF
+    - CONTAINS
+    - DEPENDS_ON
+    - CONTROLS
+    - MONITORS
+    - PROVIDES_POWER_TO
+    - SENDS_DATA_TO
+    - REFERENCES
+    - PRECEDES
+    - REQUIRES_CHECK
+    - AFFECTS
+    - IMPLEMENTS
+    - SIMILAR_TO
+    - CAUSED_BY
+    - MITIGATED_BY
+    - REFERENCES_TABLE
+    - REFERENCES_FIGURE
+    - DEFINED_IN_TABLE
+    - SHOWN_IN_FIGURE
+    - CONTAINS_TABLE
+    - CONTAINS_FIGURE
+    - CROSS_REFERENCES
+
+normalization:
+  fuzzy_threshold: 0.90
+  embedding_similarity_threshold: 0.85
+  auto_merge_threshold: 0.95
+  min_mention_count: 2
+  enable_acronym_resolution: true
+  enable_fuzzy_matching: true
+  enable_semantic_matching: true
+
+retrieval:
+  vector_search:
+    top_k: 20
+    min_score: 0.5
+    enable_mmr: false
+    mmr_lambda: 0.5
+
+  graph_search:
+    max_depth: 3
+    relationship_types:
+      - PART_OF
+      - DEPENDS_ON
+      - REFERENCES
+      - CONTAINS
+    enable_shortest_path: true
+
+  hybrid:
+    enabled: true
+    parallel_execution: true
+    strategy_selection: "auto"
+
+  reranking:
+    enabled: true
+    weights:
+      vector_similarity: 0.4
+      graph_relevance: 0.3
+      entity_coverage: 0.15
+      confidence: 0.10
+      diversity: 0.05
+    max_results: 10
+
+curation:
+  auto_approve_threshold: 0.95
+  review_queue_size: 50
+  batch_size: 10
+  enable_audit_trail: true
+
+pipeline:
+  batch_size: 10
+  max_workers: 4
+  enable_progress_bar: true
+  checkpoint_interval: 100
+  enable_checkpointing: true
+
+logging:
+  level: "INFO"
+  format: "json"
+  file: "logs/ragagent2.log"
+  max_size_mb: 100
+  backup_count: 5
+  enable_query_logging: true

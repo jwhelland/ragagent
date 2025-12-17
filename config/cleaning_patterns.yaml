@@ -1,0 +1,103 @@
+# Text cleaning patterns for PDF preprocessing
+# Regex patterns to remove noise while preserving technical content
+
+headers:
+  enabled: true
+  patterns:
+    # Common header patterns
+    - '(?i)^.*?(proprietary|confidential|restricted|internal use only).*?$'
+    - '(?i)^.*?(draft|preliminary|final).*?version.*?$'
+    - '^.*?Page \d+ of \d+.*?$'
+    - '^.*?Document \d+.*?$'
+
+footers:
+  enabled: true
+  patterns:
+    # Common footer patterns
+    - '(?i)^.*?copyright.*?(\d{4}).*?$'
+    - '(?i)^.*?all rights reserved.*?$'
+    - '^.*?www\..*?\.com.*?$'
+    - '^.*?revision.*?\d+.*?$'
+
+page_numbers:
+  enabled: true
+  patterns:
+    # Page numbering patterns
+    - '^\s*\d+\s*$'
+    - '^\s*-\s*\d+\s*-\s*$'
+    - '^Page \d+$'
+    - '^\[\d+\]$'
+
+watermarks:
+  enabled: true
+  patterns:
+    # Watermark patterns
+    - '(?i)DRAFT'
+    - '(?i)CONFIDENTIAL'
+    - '(?i)PRELIMINARY'
+    - '(?i)FOR REVIEW ONLY'
+
+noise:
+  enabled: true
+  patterns:
+    # OCR artifacts and noise
+    - '^[^\w\s]{3,}$'  # Lines with only special characters
+    - '^\s*[|_-]{5,}\s*$'  # Horizontal lines
+    - '^\.{3,}$'  # Multiple dots
+    - '^\s*\*{3,}\s*$'  # Multiple asterisks
+
+# Preservation patterns - these will NOT be removed even if they match removal patterns
+preserve:
+  enabled: true
+  patterns:
+    # Code blocks
+    - '(?s)```.*?```'
+    - '(?s)`[^`]+`'
+
+    # Equations and formulas
+    - '\$.*?\$'
+    - '\\\[.*?\\\]'
+    - '\\\(.*?\\\)'
+
+    # Technical terms and acronyms
+    - '\b[A-Z]{2,}\b'  # Acronyms
+    - '\b[A-Z][a-z]+(?:[A-Z][a-z]+)+\b'  # CamelCase
+
+    # Parameter values and measurements
+    - '\d+\.?\d*\s*(?:V|A|W|Hz|kHz|MHz|GHz|°C|°F|K|Pa|kPa|MPa|N|kg|g|m|cm|mm|km|s|ms|µs|ns)'
+
+    # References and citations
+    - '\[[\d,\s-]+\]'
+    - '\(\d{4}\)'  # Years in parentheses
+
+# Normalization patterns
+normalization:
+  whitespace:
+    enabled: true
+    operations:
+      - collapse_multiple_spaces
+      - remove_trailing_spaces
+      - normalize_newlines
+      - remove_excessive_newlines  # More than 2 consecutive
+
+  special_characters:
+    enabled: true
+    operations:
+      - normalize_quotes  # Convert curly quotes to straight
+      - normalize_dashes  # Convert em/en dashes to hyphens
+      - remove_zero_width_chars
+
+# OCR error correction patterns
+ocr_corrections:
+  enabled: true
+  patterns:
+    # Common OCR mistakes
+    - pattern: '\bl\b'  # Single 'l' often should be '1'
+      replacement: '1'
+      context: 'numeric'  # Only in numeric context
+    - pattern: '\bO\b'  # Single 'O' often should be '0'
+      replacement: '0'
+      context: 'numeric'
+    - pattern: 'rn'  # Often should be 'm'
+      replacement: 'm'
+      context: 'word'

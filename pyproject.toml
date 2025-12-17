@@ -1,7 +1,113 @@
 [project]
 name = "ragagent2"
 version = "0.1.0"
-description = "A GraphRAG implementation for technical PDF documents"
+description = "A Graph RAG system for satellite technical documents with hybrid retrieval"
 readme = "README.md"
 requires-python = ">=3.12.1"
-dependencies = []
+authors = [
+    {name = "Jason Helland"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    # PDF Processing
+    "docling>=2.0.0",
+    "pypdf>=3.0.0",
+
+    # NLP and Entity Extraction
+    "spacy>=3.7.0",
+
+    # LLM Integration
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+
+    # Graph Database
+    "neo4j>=5.15.0",
+
+    # Vector Database
+    "qdrant-client>=1.7.0",
+    "fastembed>=0.2.0",
+
+    # Embeddings
+    "sentence-transformers>=2.3.0",
+
+    # Normalization and Matching
+    "numpy>=1.24.0",
+
+    # Data Validation and Configuration
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "PyYAML>=6.0",
+
+    # CLI and Utilities
+    "loguru>=0.7.2",
+
+    # Testing
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.12.0",
+    "ruff>=0.1.9",
+    "mypy>=1.7.0",
+    "ipython>=8.18.0",
+    "jupyter>=1.0.0",
+]
+
+# NOTE:
+# Console scripts are intentionally not defined yet.
+# The repository currently exposes CLI entry points as standalone scripts under ./scripts
+# (e.g. [`scripts/ingest_documents.py`](scripts/ingest_documents.py:1),
+#  [`scripts/setup_databases.py`](scripts/setup_databases.py:1)).
+#
+# The previous entrypoints referenced `ragagent2.scripts.*`, which does not exist in this codebase
+# and would produce broken installed commands.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# The project’s import root is the `src` package directory (this repo uses `from src...` imports).
+# Hatchling cannot infer that from the project name `ragagent2`, so we configure it explicitly.
+packages = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # line too long (handled by black)
+]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=html"
