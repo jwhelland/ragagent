@@ -164,7 +164,8 @@ uv run ragagent-ingest docs/file1.pdf docs/file2.pdf -c config/config.yaml --ver
 uv run ragagent-ingest --directory data/raw --dry-run
 ```
 
-Key flags: `--directory` (or pass paths), `--batch-size`, `--config`, `--verbose`, `--dry-run`.
+Key flags: `--directory` (or pass paths), `--batch-size`, `--config`, `--verbose`,
+`--dry-run`, `--force-reingest` (bypass checkpoint skip and reprocess a completed doc).
 
 ### Run Entity Discovery
 

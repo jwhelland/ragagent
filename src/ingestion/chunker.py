@@ -87,8 +87,24 @@ class HierarchicalChunker:
         section_chunks = self._create_section_chunks(parsed_doc, doc_chunk.chunk_id)
         all_chunks.extend(section_chunks)
 
-        # Update document chunk with child IDs
+        # Update document chunk with child IDs (may be populated below)
         doc_chunk.child_chunk_ids = [c.chunk_id for c in section_chunks]
+
+        # Fallback: if no structural sections were detected, chunk the whole document by paragraphs
+        if not section_chunks:
+            paragraph_chunks = self._create_paragraph_chunks(
+                doc_chunk.content,
+                parsed_doc.document_id,
+                doc_chunk.chunk_id,
+                doc_chunk.metadata,
+            )
+            all_chunks.extend(paragraph_chunks)
+            doc_chunk.child_chunk_ids = [c.chunk_id for c in paragraph_chunks]
+            logger.info(
+                "No sections detected; chunked document into {} paragraph-level chunks",
+                len(paragraph_chunks),
+            )
+            return all_chunks
 
         # Level 3: Subsection chunks
         for section_chunk in section_chunks:

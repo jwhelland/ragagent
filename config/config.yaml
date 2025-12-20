@@ -23,7 +23,7 @@ ingestion:
     llm:
       provider: "openai"
       base_url: "https://api.openai.com/v1"
-      model: "gpt-4o-mini"
+      model: "gpt-5-mini"
       temperature: 0.3
       max_tokens: 3000
     chunk_level: "section"
@@ -54,7 +54,7 @@ extraction:
   llm:
     provider: "openai"
     base_url: "https://api.openai.com/v1"
-    model: "gpt-4o-mini"
+    model: "gpt-5-mini"
     temperature: 0.1
     max_tokens: 2000
     timeout: 60

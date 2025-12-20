@@ -8,7 +8,9 @@ This module orchestrates the complete document processing workflow:
 5. Storage in Neo4j (graph) and Qdrant (vectors)
 """
 
+import logging
 import re
+import threading
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -32,7 +34,6 @@ from src.storage.schemas import Chunk as GraphChunk
 from src.storage.schemas import Document, EntityCandidate, EntityType, RelationshipCandidate
 from src.utils.config import Config
 from src.utils.embeddings import EmbeddingGenerator
-
 if TYPE_CHECKING:
     from src.ingestion.pdf_parser import PDFParser
     from src.normalization.acronym_resolver import AcronymResolver
@@ -49,6 +50,66 @@ class IngestionResult(BaseModel):
     entities_created: int = 0
     processing_time: float = 0.0
     error: Optional[str] = None
+
+
+class ExtractionProgress:
+    """Lightweight extraction progress tracker with heartbeat logging."""
+
+    def __init__(self, total_chunks: int, heartbeat_seconds: float = 15.0) -> None:
+        self.total_chunks = max(0, total_chunks)
+        self.heartbeat_seconds = heartbeat_seconds
+        self.stages: dict[str, dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def enable_stage(self, name: str, label: str) -> None:
+        self.stages[name] = {
+            "label": label,
+            "total": self.total_chunks,
+            "done": 0,
+            "start": time.time(),
+            "last_log": 0.0,
+        }
+
+    def update(self, name: str, *, increment: int = 1) -> None:
+        stage = self.stages.get(name)
+        if not stage:
+            return
+        with self._lock:
+            stage["done"] = min(stage["done"] + increment, stage["total"])
+            now = time.time()
+            elapsed = max(now - stage["start"], 1e-6)
+            rate = stage["done"] / elapsed
+            remaining = max(stage["total"] - stage["done"], 0)
+            eta_seconds = remaining / rate if rate > 0 else float("inf")
+
+            should_log = (
+                stage["done"] == stage["total"]
+                or stage["last_log"] == 0
+                or (now - stage["last_log"]) >= self.heartbeat_seconds
+            )
+            if should_log:
+                percent = (stage["done"] / max(stage["total"], 1)) * 100
+                logger.info(
+                    "Extraction {}: {}/{} ({:.0f}%), {:.2f} cps, ETA {}",
+                    stage["label"],
+                    stage["done"],
+                    stage["total"],
+                    percent,
+                    rate,
+                    self._format_eta(eta_seconds),
+                )
+                stage["last_log"] = now
+
+    def _format_eta(self, seconds: float) -> str:
+        if seconds == float("inf"):
+            return "unknown"
+        minutes, secs = divmod(int(seconds), 60)
+        hours, minutes = divmod(minutes, 60)
+        if hours:
+            return f"{hours}h{minutes:02d}m"
+        if minutes:
+            return f"{minutes}m{secs:02d}s"
+        return f"{secs}s"
 
 
 class IngestionPipeline:
@@ -70,6 +131,8 @@ class IngestionPipeline:
             config: Application configuration
         """
         self.config = config
+        self._debug_logging = str(getattr(config.logging, "level", "INFO")).upper() == "DEBUG"
+        self._http_logs_silenced = False
 
         # Initialize components
         self.pdf_parser: PDFParser | None = None
@@ -188,8 +251,11 @@ class IngestionPipeline:
             self.qdrant_manager = QdrantManager(self.config.database)
 
         logger.debug("All pipeline components initialized")
+        self._silence_external_http_logs()
 
-    def process_document(self, pdf_path: Path | str) -> IngestionResult:
+    def process_document(
+        self, pdf_path: Path | str, *, force_reingest: bool = False
+    ) -> IngestionResult:
         """Process a single PDF document end-to-end.
 
         Implements basic resume/rollback semantics:
@@ -200,6 +266,10 @@ class IngestionPipeline:
 
         Args:
             pdf_path: Path to the PDF file
+
+        Args:
+            pdf_path: Path to the PDF file
+            force_reingest: If True, ignore checkpoint skip and reprocess the document (after cleanup)
 
         Returns:
             IngestionResult with processing details
@@ -248,6 +318,7 @@ class IngestionPipeline:
                     and existing_checksum
                     and existing_checksum == parsed_doc.metadata.get("checksum")
                     and existing_status == "completed"
+                    and not force_reingest
                 ):
                     # Already ingested successfully; skip.
                     try:
@@ -273,7 +344,11 @@ class IngestionPipeline:
                 # If doc exists but isn't completed or checksum changed, clean up partial/old chunks.
                 if existing:
                     logger.info(
-                        f"Re-ingesting document {parsed_doc.document_id} (status={existing_status!r}, checksum_changed={existing_checksum != parsed_doc.metadata.get('checksum')})"
+                        "Re-ingesting document {} (status={!r}, checksum_changed={}, force={})",
+                        parsed_doc.document_id,
+                        existing_status,
+                        existing_checksum != parsed_doc.metadata.get("checksum"),
+                        force_reingest,
                     )
                     self._cleanup_document_chunks(parsed_doc.document_id)
 
@@ -300,6 +375,13 @@ class IngestionPipeline:
             # Step 3b: Build/update acronym dictionary from chunks (normalization aid)
             self.stats["acronym_definitions_added"] += self._update_acronym_dictionary(chunks)
 
+            progress = ExtractionProgress(len(chunks))
+            if self.spacy_extractor:
+                progress.enable_stage("spacy", "spaCy entities")
+            if self.config.extraction.enable_llm and self.llm_extractor:
+                progress.enable_stage("llm_entities", "LLM entities")
+                progress.enable_stage("llm_relationships", "LLM relationships")
+
             # Step 4: Extract entities with spaCy + LLM (in parallel when possible)
             logger.debug("Step 4: Extracting entities (spaCy + LLM)")
             spacy_entities_created = 0
@@ -313,13 +395,15 @@ class IngestionPipeline:
             )
             if can_parallelize:
                 with ThreadPoolExecutor(max_workers=2) as executor:
-                    spacy_future = executor.submit(self._extract_spacy_entities, chunks)
-                    llm_future = executor.submit(self._extract_llm_entities, chunks)
+                    spacy_future = executor.submit(
+                        self._extract_spacy_entities, chunks, progress
+                    )
+                    llm_future = executor.submit(self._extract_llm_entities, chunks, progress)
                     spacy_entities_created = spacy_future.result()
                     llm_entities_created = llm_future.result()
             else:
                 logger.debug("Step 4a: Extracting entities with spaCy")
-                spacy_entities_created = self._extract_spacy_entities(chunks)
+                spacy_entities_created = self._extract_spacy_entities(chunks, progress)
                 if self.config.extraction.enable_llm:
                     if not self.llm_extractor:
                         logger.warning(
@@ -327,11 +411,11 @@ class IngestionPipeline:
                         )
                     else:
                         logger.debug("Step 4b: Extracting entities with LLM")
-                        llm_entities_created = self._extract_llm_entities(chunks)
+                        llm_entities_created = self._extract_llm_entities(chunks, progress)
 
             if self.config.extraction.enable_llm and self.llm_extractor:
                 logger.debug("Step 4c: Extracting relationships with LLM")
-                llm_relationships_created = self._extract_llm_relationships(chunks)
+                llm_relationships_created = self._extract_llm_relationships(chunks, progress)
 
             # Step 4d: Merge entities across extractors
             logger.debug("Step 4d: Merging extracted entities")
@@ -604,11 +688,14 @@ class IngestionPipeline:
 
         return suggestion_count
 
-    def process_batch(self, pdf_paths: List[Path | str]) -> List[IngestionResult]:
+    def process_batch(
+        self, pdf_paths: List[Path | str], *, force_reingest: bool = False
+    ) -> List[IngestionResult]:
         """Process multiple PDF documents.
 
         Args:
             pdf_paths: List of paths to PDF files
+            force_reingest: If True, ignore checkpoint skip and reprocess documents (after cleanup)
 
         Returns:
             List of IngestionResult objects
@@ -617,7 +704,7 @@ class IngestionPipeline:
 
         results = []
         for pdf_path in pdf_paths:
-            result = self.process_document(pdf_path)
+            result = self.process_document(pdf_path, force_reingest=force_reingest)
             results.append(result)
 
             # Log progress
@@ -637,6 +724,22 @@ class IngestionPipeline:
         )
 
         return results
+
+    def _silence_external_http_logs(self) -> None:
+        """Reduce noisy HTTP request logs unless debug logging is enabled."""
+        if self._debug_logging or self._http_logs_silenced:
+            return
+
+        noisy_loggers = (
+            "httpx",
+            "httpcore",
+            "openai",
+            "openai._base_client",
+            "openai._http_client",
+        )
+        for name in noisy_loggers:
+            logging.getLogger(name).setLevel(logging.WARNING)
+        self._http_logs_silenced = True
 
     def _rewrite_parsed_document(self, parsed_doc: ParsedDocument) -> None:
         """Rewrite parsed document content based on config chunk_level.
@@ -733,7 +836,9 @@ class IngestionPipeline:
             }
         )
 
-    def _extract_spacy_entities(self, chunks: List[Any]) -> int:
+    def _extract_spacy_entities(
+        self, chunks: List[Any], progress: ExtractionProgress | None = None
+    ) -> int:
         """Extract entities from chunks using the spaCy extractor."""
         if not self.spacy_extractor:
             return 0
@@ -749,6 +854,8 @@ class IngestionPipeline:
         for chunk in chunks:
             entities = by_chunk.get(getattr(chunk, "chunk_id", None), [])
             if not entities:
+                if progress:
+                    progress.update("spacy")
                 continue
 
             total += len(entities)
@@ -768,9 +875,18 @@ class IngestionPipeline:
                     }
                 )
 
+            if progress:
+                progress.update("spacy")
+
+        # Ensure final heartbeat when there were zero entities but chunks processed
+        if progress and not chunks:
+            progress.update("spacy")
+
         return total
 
-    def _extract_llm_entities(self, chunks: List[Any]) -> int:
+    def _extract_llm_entities(
+        self, chunks: List[Any], progress: ExtractionProgress | None = None
+    ) -> int:
         """Extract entities from chunks using the configured LLM extractor."""
         if not self.llm_extractor:
             return 0
@@ -795,33 +911,35 @@ class IngestionPipeline:
                     chunk_id=getattr(chunk, "chunk_id", None),
                     error=str(exc),
                 )
-                continue
+                entities = []
 
-            if not entities:
-                continue
+            if entities:
+                total += len(entities)
+                metadata.setdefault("llm_entities", [])
+                llm_entities_by_chunk[getattr(chunk, "chunk_id", None)].extend(entities)
 
-            total += len(entities)
-            metadata.setdefault("llm_entities", [])
-            llm_entities_by_chunk[getattr(chunk, "chunk_id", None)].extend(entities)
+                for ent in entities:
+                    metadata["llm_entities"].append(
+                        {
+                            "name": ent.name,
+                            "type": ent.type,
+                            "description": ent.description,
+                            "aliases": ent.aliases,
+                            "confidence": ent.confidence,
+                            "source": ent.source,
+                            "chunk_id": ent.chunk_id or getattr(chunk, "chunk_id", None),
+                            "document_id": ent.document_id or getattr(chunk, "document_id", None),
+                        }
+                    )
 
-            for ent in entities:
-                metadata["llm_entities"].append(
-                    {
-                        "name": ent.name,
-                        "type": ent.type,
-                        "description": ent.description,
-                        "aliases": ent.aliases,
-                        "confidence": ent.confidence,
-                        "source": ent.source,
-                        "chunk_id": ent.chunk_id or getattr(chunk, "chunk_id", None),
-                        "document_id": ent.document_id or getattr(chunk, "document_id", None),
-                    }
-                )
-
-            if hasattr(chunk, "metadata"):
-                chunk.metadata = metadata
+                if hasattr(chunk, "metadata"):
+                    chunk.metadata = metadata
+            if progress:
+                progress.update("llm_entities")
 
         self._llm_entities_by_chunk = dict(llm_entities_by_chunk)
+        if progress and not chunks:
+            progress.update("llm_entities")
         return total
 
     def _normalize_candidate_key(self, value: str) -> str:
@@ -977,7 +1095,9 @@ class IngestionPipeline:
 
         return stored
 
-    def _extract_llm_relationships(self, chunks: List[Any]) -> int:
+    def _extract_llm_relationships(
+        self, chunks: List[Any], progress: ExtractionProgress | None = None
+    ) -> int:
         """Extract relationships from chunks using the configured LLM extractor."""
         if not self.llm_extractor:
             return 0
@@ -1005,32 +1125,34 @@ class IngestionPipeline:
                     chunk_id=getattr(chunk, "chunk_id", None),
                     error=str(exc),
                 )
-                continue
+                relationships = []
 
-            if not relationships:
-                continue
+            if relationships:
+                total += len(relationships)
+                metadata.setdefault("llm_relationships", [])
 
-            total += len(relationships)
-            metadata.setdefault("llm_relationships", [])
+                for rel in relationships:
+                    metadata["llm_relationships"].append(
+                        {
+                            "source": rel.source,
+                            "type": rel.type,
+                            "target": rel.target,
+                            "description": rel.description,
+                            "confidence": rel.confidence,
+                            "bidirectional": rel.bidirectional,
+                            "chunk_id": rel.chunk_id or getattr(chunk, "chunk_id", None),
+                            "document_id": rel.document_id or getattr(chunk, "document_id", None),
+                            "source_extractor": rel.source_extractor,
+                        }
+                    )
 
-            for rel in relationships:
-                metadata["llm_relationships"].append(
-                    {
-                        "source": rel.source,
-                        "type": rel.type,
-                        "target": rel.target,
-                        "description": rel.description,
-                        "confidence": rel.confidence,
-                        "bidirectional": rel.bidirectional,
-                        "chunk_id": rel.chunk_id or getattr(chunk, "chunk_id", None),
-                        "document_id": rel.document_id or getattr(chunk, "document_id", None),
-                        "source_extractor": rel.source_extractor,
-                    }
-                )
+                if hasattr(chunk, "metadata"):
+                    chunk.metadata = metadata
+            if progress:
+                progress.update("llm_relationships")
 
-            if hasattr(chunk, "metadata"):
-                chunk.metadata = metadata
-
+        if progress and not chunks:
+            progress.update("llm_relationships")
         return total
 
     def _merge_entities(self, chunks: List[Any]) -> int:
