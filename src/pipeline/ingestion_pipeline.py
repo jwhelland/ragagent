@@ -726,7 +726,7 @@ class IngestionPipeline:
         return results
 
     def _silence_external_http_logs(self) -> None:
-        """Reduce noisy HTTP request logs unless debug logging is enabled."""
+        """Reduce noisy external logs unless debug logging is enabled."""
         if self._debug_logging or self._http_logs_silenced:
             return
 
@@ -736,6 +736,9 @@ class IngestionPipeline:
             "openai",
             "openai._base_client",
             "openai._http_client",
+            # Docling emits deprecation warnings like "strict_text"; suppress unless debugging.
+            "docling",
+            "docling.document_converter",
         )
         for name in noisy_loggers:
             logging.getLogger(name).setLevel(logging.WARNING)
