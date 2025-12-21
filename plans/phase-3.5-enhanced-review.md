@@ -1,8 +1,8 @@
-# Phase 7: Enhanced Review Interface
+# Phase 3.5: Enhanced Review Interface (Weeks 6.5-7.5)
 
 ## Executive Summary
 
-This phase addresses the critical usability challenge of reviewing large volumes of entity and relationship candidates. The current CLI implementation becomes cumbersome when processing hundreds or thousands of candidates, requiring too many manual commands and context switches. This plan evaluates two approaches: an enhanced interactive CLI tool and a lightweight web interface, with detailed architecture, implementation tasks, and recommendations.
+This phase addresses the critical usability challenge of reviewing large volumes of entity and relationship candidates. The current CLI implementation (from Phase 3) becomes cumbersome when processing hundreds or thousands of candidates, requiring too many manual commands and context switches. This plan evaluates two approaches: an enhanced interactive CLI tool and a lightweight web interface, with detailed architecture, implementation tasks, and recommendations.
 
 **Current Pain Points:**
 - Repetitive command typing for each action (approve, reject, edit)
@@ -15,6 +15,10 @@ This phase addresses the critical usability challenge of reviewing large volumes
 - Difficult to compare similar candidates side-by-side
 
 **Recommended Approach:** Start with Enhanced Interactive CLI (Option 1), then optionally add Web Interface (Option 2) in future if team prefers visual approach.
+
+**Timeline:** Weeks 6.5-7.5 (1 week)
+**Architecture Reference:** [`graph-rag-architecture.md`](graph-rag-architecture.md)
+**Previous Phase:** [Phase 3 - Normalization & Curation](phase-3-normalization-curation.md)
 
 ---
 
@@ -111,7 +115,7 @@ graph TB
         SCREEN[Review Screen]
         WIDGETS[UI Widgets]
     end
-    
+
     subgraph "UI Components"
         LIST[Candidate List View]
         DETAIL[Detail Panel]
@@ -120,33 +124,33 @@ graph TB
         SEARCH[Search Overlay]
         HELP[Help Modal]
     end
-    
+
     subgraph "State Management"
         STATE[Application State]
         QUEUE[Queue Manager]
         FILTER[Filter Engine]
         SESSION[Session Tracker]
     end
-    
+
     subgraph "Backend Services"
         STORE[CandidateStore]
         CURATION[EntityCurationService]
         BATCH[BatchCurationService]
         NEO4J[Neo4j Manager]
     end
-    
+
     APP --> SCREEN
     SCREEN --> WIDGETS
     WIDGETS --> LIST
     WIDGETS --> DETAIL
     WIDGETS --> STATUS
     WIDGETS --> PROGRESS
-    
+
     LIST --> STATE
     STATE --> QUEUE
     STATE --> FILTER
     STATE --> SESSION
-    
+
     QUEUE --> STORE
     STATE --> CURATION
     STATE --> BATCH
@@ -180,9 +184,9 @@ scripts/
 
 ### Implementation Tasks
 
-#### Task 7.1: Interactive TUI Foundation
-**Priority:** Critical  
-**Dependencies:** None
+#### Task 3.5.1: Interactive TUI Foundation
+**Priority:** Critical
+**Dependencies:** Task 3.7
 
 **Subtasks:**
 1. Install and configure `textual` dependency
@@ -204,9 +208,9 @@ scripts/
 
 ---
 
-#### Task 7.2: Candidate List Widget
-**Priority:** Critical  
-**Dependencies:** 7.1
+#### Task 3.5.2: Candidate List Widget
+**Priority:** Critical
+**Dependencies:** Task 3.5.1
 
 **Subtasks:**
 1. Create scrollable list widget for candidates
@@ -229,9 +233,9 @@ scripts/
 
 ---
 
-#### Task 7.3: Detail Panel Widget
-**Priority:** High  
-**Dependencies:** 7.2
+#### Task 3.5.3: Detail Panel Widget
+**Priority:** High
+**Dependencies:** Task 3.5.2
 
 **Subtasks:**
 1. Create detail panel showing full candidate information
@@ -253,9 +257,9 @@ scripts/
 
 ---
 
-#### Task 7.4: Single-Key Actions
-**Priority:** Critical  
-**Dependencies:** 7.2, 7.3
+#### Task 3.5.4: Single-Key Actions
+**Priority:** Critical
+**Dependencies:** Task 3.5.2, Task 3.5.3
 
 **Subtasks:**
 1. Implement keybinding system
@@ -279,9 +283,9 @@ scripts/
 
 ---
 
-#### Task 7.5: Edit Modal
-**Priority:** High  
-**Dependencies:** 7.4
+#### Task 3.5.5: Edit Modal
+**Priority:** High
+**Dependencies:** Task 3.5.4
 
 **Subtasks:**
 1. Create modal dialog for editing
@@ -304,9 +308,9 @@ scripts/
 
 ---
 
-#### Task 7.6: Search and Filter System
-**Priority:** High  
-**Dependencies:** 7.2
+#### Task 3.5.6: Search and Filter System
+**Priority:** High
+**Dependencies:** Task 3.5.2
 
 **Subtasks:**
 1. Implement search modal (`/` key)
@@ -330,9 +334,9 @@ scripts/
 
 ---
 
-#### Task 7.7: Progress Tracking and Statistics
-**Priority:** Medium  
-**Dependencies:** 7.1
+#### Task 3.5.7: Progress Tracking and Statistics
+**Priority:** Medium
+**Dependencies:** Task 3.5.1
 
 **Subtasks:**
 1. Implement session statistics tracker
@@ -356,9 +360,9 @@ scripts/
 
 ---
 
-#### Task 7.8: Batch Operations UI
-**Priority:** Medium  
-**Dependencies:** 7.2, 7.4
+#### Task 3.5.8: Batch Operations UI
+**Priority:** Medium
+**Dependencies:** Task 3.5.2, Task 3.5.4
 
 **Subtasks:**
 1. Implement visual selection mode (`v` key)
@@ -382,9 +386,9 @@ scripts/
 
 ---
 
-#### Task 7.9: Vim-Style Command Mode
-**Priority:** Low  
-**Dependencies:** 7.6
+#### Task 3.5.9: Vim-Style Command Mode
+**Priority:** Low
+**Dependencies:** Task 3.5.6
 
 **Subtasks:**
 1. Implement command mode (`:` key)
@@ -408,9 +412,9 @@ scripts/
 
 ---
 
-#### Task 7.10: Advanced Features
-**Priority:** Low  
-**Dependencies:** 7.2, 7.6
+#### Task 3.5.10: Advanced Features
+**Priority:** Low
+**Dependencies:** Task 3.5.2, Task 3.5.6
 
 **Subtasks:**
 1. Implement mark system (`ma`, `'a`)
@@ -530,7 +534,7 @@ graph TB
         ROUTES[React Router]
         PAGES[Page Components]
     end
-    
+
     subgraph "UI Components"
         DASHBOARD[Dashboard]
         CARDVIEW[Card View]
@@ -540,26 +544,26 @@ graph TB
         FILTERS[Filter Bar]
         STATS[Statistics Panel]
     end
-    
+
     subgraph "State Management"
         STORE[Zustand Store]
         QUERY[TanStack Query]
         WS[WebSocket Client]
     end
-    
+
     subgraph "FastAPI Backend"
         API[REST API Endpoints]
         SOCKET[WebSocket Handler]
         SERVICES[Service Layer]
     end
-    
+
     subgraph "Backend Services"
         CURATION[EntityCurationService]
         BATCH[BatchCurationService]
         STORE_BE[CandidateStore]
         NEO4J[Neo4j Manager]
     end
-    
+
     APP --> ROUTES
     ROUTES --> PAGES
     PAGES --> DASHBOARD
@@ -567,7 +571,7 @@ graph TB
     DASHBOARD --> LISTVIEW
     DASHBOARD --> FILTERS
     DASHBOARD --> STATS
-    
+
     CARDVIEW --> STORE
     STORE --> QUERY
     QUERY --> API
@@ -575,7 +579,7 @@ graph TB
     SERVICES --> CURATION
     SERVICES --> BATCH
     CURATION --> NEO4J
-    
+
     WS --> SOCKET
     SOCKET --> SERVICES
 ```
@@ -627,9 +631,9 @@ web/
 
 ### Implementation Tasks
 
-#### Task 7.11: FastAPI Backend Foundation
-**Priority:** Critical  
-**Dependencies:** None
+#### Task 3.5.11: FastAPI Backend Foundation
+**Priority:** Critical
+**Dependencies:** Task 3.7
 
 **Subtasks:**
 1. Set up FastAPI application structure
@@ -652,9 +656,9 @@ web/
 
 ---
 
-#### Task 7.12: React Frontend Setup
-**Priority:** Critical  
-**Dependencies:** 7.11
+#### Task 3.5.12: React Frontend Setup
+**Priority:** Critical
+**Dependencies:** Task 3.5.11
 
 **Subtasks:**
 1. Initialize Vite + React + TypeScript project
@@ -678,9 +682,9 @@ web/
 
 ---
 
-#### Task 7.13: Card and List Views
-**Priority:** High  
-**Dependencies:** 7.12
+#### Task 3.5.13: Card and List Views
+**Priority:** High
+**Dependencies:** Task 3.5.12
 
 **Subtasks:**
 1. Create CandidateCard component
@@ -704,9 +708,9 @@ web/
 
 ---
 
-#### Task 7.14: Action Buttons and Workflows
-**Priority:** Critical  
-**Dependencies:** 7.13
+#### Task 3.5.14: Action Buttons and Workflows
+**Priority:** Critical
+**Dependencies:** Task 3.5.13
 
 **Subtasks:**
 1. Implement approve button with API call
@@ -730,9 +734,9 @@ web/
 
 ---
 
-#### Task 7.15: Inline Edit Form
-**Priority:** High  
-**Dependencies:** 7.13
+#### Task 3.5.15: Inline Edit Form
+**Priority:** High
+**Dependencies:** Task 3.5.13
 
 **Subtasks:**
 1. Create inline edit mode for cards
@@ -756,9 +760,9 @@ web/
 
 ---
 
-#### Task 7.16: Filter and Search UI
-**Priority:** High  
-**Dependencies:** 7.13
+#### Task 3.5.16: Filter and Search UI
+**Priority:** High
+**Dependencies:** Task 3.5.13
 
 **Subtasks:**
 1. Create FilterBar component
@@ -782,9 +786,9 @@ web/
 
 ---
 
-#### Task 7.17: Dashboard and Statistics
-**Priority:** Medium  
-**Dependencies:** 7.12
+#### Task 3.5.17: Dashboard and Statistics
+**Priority:** Medium
+**Dependencies:** Task 3.5.12
 
 **Subtasks:**
 1. Create Dashboard layout
@@ -808,9 +812,9 @@ web/
 
 ---
 
-#### Task 7.18: Batch Operations UI
-**Priority:** Medium  
-**Dependencies:** 7.13, 7.14
+#### Task 3.5.18: Batch Operations UI
+**Priority:** Medium
+**Dependencies:** Task 3.5.13, Task 3.5.14
 
 **Subtasks:**
 1. Add checkbox selection to cards/list
@@ -834,9 +838,9 @@ web/
 
 ---
 
-#### Task 7.19: WebSocket Real-Time Updates
-**Priority:** Low  
-**Dependencies:** 7.11, 7.12
+#### Task 3.5.19: WebSocket Real-Time Updates
+**Priority:** Low
+**Dependencies:** Task 3.5.11, Task 3.5.12
 
 **Subtasks:**
 1. Implement WebSocket endpoint in backend
@@ -860,9 +864,9 @@ web/
 
 ---
 
-#### Task 7.20: Mobile Optimization and Gestures
-**Priority:** Low  
-**Dependencies:** 7.13
+#### Task 3.5.20: Mobile Optimization and Gestures
+**Priority:** Low
+**Dependencies:** Task 3.5.13
 
 **Subtasks:**
 1. Implement touch gesture library
@@ -907,7 +911,7 @@ web/
 
 | Aspect | Enhanced CLI | Web Interface |
 |--------|-------------|---------------|
-| **Development Time** | 3-4 weeks | 5-6 weeks |
+| **Development Time** | 1 week | 2-3 weeks |
 | **Maintenance Complexity** | Low | Medium |
 | **Dependencies** | Minimal (textual, rich) | Many (React, FastAPI, build tools) |
 | **Deployment** | pip install | Web server + frontend hosting |
@@ -958,31 +962,31 @@ web/
 
 ## Recommended Implementation Strategy
 
-### Phase 1: Start with Enhanced CLI (Recommended)
+### Phase 3.5: Start with Enhanced CLI (Recommended)
 
 **Rationale:**
-1. **Faster Time-to-Value:** 3-4 weeks vs 5-6 weeks
+1. **Faster Time-to-Value:** 1 week vs 2-3 weeks
 2. **Lower Risk:** Fewer dependencies and moving parts
 3. **Better Performance:** Native terminal performance
 4. **Team Alignment:** Technical team comfortable with CLI
-5. **Existing Foundation:** Builds on current CLI tool
+5. **Existing Foundation:** Builds on current CLI tool (Task 3.6)
 6. **Minimal Deployment:** Just `uv run ragagent-review-interactive`
 
 **Implementation Order:**
-1. Week 1: Foundation + Navigation (Tasks 7.1, 7.2)
-2. Week 2: Actions + Detail View (Tasks 7.3, 7.4, 7.5)
-3. Week 3: Search/Filter + Progress (Tasks 7.6, 7.7)
-4. Week 4: Batch Operations + Polish (Tasks 7.8, 7.9, 7.10)
+1. Days 1-2: Foundation + Navigation (Tasks 3.5.1, 3.5.2)
+2. Days 3-4: Actions + Detail View (Tasks 3.5.3, 3.5.4, 3.5.5)
+3. Day 5: Search/Filter + Progress (Tasks 3.5.6, 3.5.7)
+4. Days 6-7: Batch Operations + Polish (Tasks 3.5.8, optional 3.5.9, 3.5.10)
 
-### Phase 2: Add Web Interface (Optional Future)
+### Optional Future: Add Web Interface
 
 If team feedback indicates desire for web interface or remote access becomes critical:
 
 **Implementation Order:**
-1. Week 1-2: Backend API (Tasks 7.11)
-2. Week 3-4: Core Frontend (Tasks 7.12, 7.13, 7.14)
-3. Week 5: Advanced Features (Tasks 7.15, 7.16, 7.17)
-4. Week 6: Polish + Deployment (Tasks 7.18, 7.19, 7.20)
+1. Week 1: Backend API (Tasks 3.5.11)
+2. Week 2: Core Frontend (Tasks 3.5.12, 3.5.13, 3.5.14)
+3. Week 3: Advanced Features (Tasks 3.5.15, 3.5.16, 3.5.17)
+4. Week 4: Polish + Deployment (Tasks 3.5.18, 3.5.19, 3.5.20)
 
 ### Hybrid Approach
 
@@ -1226,7 +1230,7 @@ npm run build
 ## Cost-Benefit Analysis
 
 ### Enhanced CLI
-**Development Cost:** 3-4 weeks  
+**Development Cost:** 1 week
 **Benefits:**
 - 3x faster review speed → saves ~20 hours/month for large datasets
 - Reduced errors → higher quality knowledge graph
@@ -1236,7 +1240,7 @@ npm run build
 **ROI:** Positive within 1 month for teams reviewing 1000+ candidates
 
 ### Web Interface
-**Development Cost:** 5-6 weeks  
+**Development Cost:** 2-3 weeks
 **Benefits:**
 - Same speed improvements as CLI
 - Enables remote collaboration
@@ -1252,7 +1256,7 @@ npm run build
 **Primary Recommendation: Implement Enhanced Interactive CLI (Option 1)**
 
 **Reasoning:**
-1. **Fastest path to value** - 3-4 weeks vs 5-6 weeks
+1. **Fastest path to value** - 1 week vs 2-3 weeks
 2. **Lower risk** - Fewer dependencies, simpler architecture
 3. **Better performance** - Native terminal performance
 4. **Team fit** - Technical team comfortable with CLI tools
@@ -1260,11 +1264,10 @@ npm run build
 6. **Cost-effective** - Less development and maintenance overhead
 
 **Implementation Plan:**
-1. **Week 1:** Foundation + Navigation (Tasks 7.1, 7.2)
-2. **Week 2:** Actions + Details (Tasks 7.3, 7.4, 7.5)
-3. **Week 3:** Search/Filter + Progress (Tasks 7.6, 7.7)
-4. **Week 4:** Batch + Polish (Tasks 7.8, 7.9)
-5. **Week 5:** Optional advanced features (Task 7.10)
+1. **Days 1-2:** Foundation + Navigation (Tasks 3.5.1, 3.5.2)
+2. **Days 3-4:** Actions + Details (Tasks 3.5.3, 3.5.4, 3.5.5)
+3. **Day 5:** Search/Filter + Progress (Tasks 3.5.6, 3.5.7)
+4. **Days 6-7:** Batch + Polish (Tasks 3.5.8, optional 3.5.9, 3.5.10)
 
 **Future Consideration:**
 Evaluate web interface (Option 2) after 3 months if:
@@ -1332,7 +1335,9 @@ Both solutions address the core problem of scaling entity review, but the enhanc
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** 2025-12-20  
-**Status:** Draft for Review  
-**Next Steps:** Team discussion and approach selection
+**Next Phase:** [Phase 4 - Retrieval System](phase-4-retrieval-system.md)
+
+**Document Version:** 1.0
+**Last Updated:** 2025-12-21
+**Status:** Draft for Review
+**Next Steps:** Begin implementation with Option 1 (Enhanced CLI)

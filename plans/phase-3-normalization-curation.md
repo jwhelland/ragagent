@@ -324,4 +324,4 @@ Create pipeline that analyzes entire corpus and generates entity discovery repor
 - Discovery pipeline identifies merge opportunities
 - Normalization table improves entity resolution
 
-**Next Phase:** [Phase 4 - Retrieval System](phase-4-retrieval-system.md)
+**Next Phase:** [Phase 3.5 - Enhanced Review Interface](phase-3.5-enhanced-review.md)

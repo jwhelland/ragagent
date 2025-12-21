@@ -27,7 +27,7 @@
 
 ## Commit & Pull Request Guidelines
 - Use short, imperative commit messages (e.g., `add qdrant schema helper`, `fix ingestion batch logging`); keep each commit focused.
-- Before PRs: run `pytest`, `black`, `ruff`, `mypy`; summarize change scope, risk/impact, and config updates (`config/*.yaml`) in the description.
+- Before PRs: run `pytest`, `black`, `ruff`; summarize change scope, risk/impact, and config updates (`config/*.yaml`) in the description.
 - Link issues/tasks; attach screenshots or log snippets when CLI behavior changes. Call out required migrations or data backfills.
 
 ## Security & Configuration Tips

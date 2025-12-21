@@ -4,9 +4,9 @@
 
 This phase implements the retrieval system that enables querying the Graph RAG system. It includes query parsing, vector retrieval, graph traversal, hybrid search, reranking, and response generation.
 
-**Timeline:** Weeks 7-8  
-**Architecture Reference:** [`graph-rag-architecture.md`](graph-rag-architecture.md)  
-**Previous Phase:** [Phase 3 - Normalization & Curation](phase-3-normalization-curation.md)
+**Timeline:** Weeks 7.5-9.5
+**Architecture Reference:** [`graph-rag-architecture.md`](graph-rag-architecture.md)
+**Previous Phase:** [Phase 3.5 - Enhanced Review Interface](phase-3.5-enhanced-review.md)
 
 ---
 
@@ -207,7 +207,7 @@ Generate natural language responses from retrieved context using LLM.
 - Generates coherent responses from context
 - Includes source citations
 - Handles insufficient context gracefully
-- Supports both local and API LLMs
+- Supports API LLMs
 - Response time <5 seconds
 - References specific chunks in sources
 
@@ -222,7 +222,7 @@ Create CLI interface for querying the system interactively.
 
 **Steps:**
 1. Create [`scripts/query_system.py`] with query interface
-2. Implement interactive query loop
+2. Implement interactive query loop.  Consider using textual or better packages for interactive cli.
 3. Add query history
 4. Display results with formatting
 5. Show entity graph visualizations (ASCII)
