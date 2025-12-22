@@ -1,7 +1,7 @@
-"""spaCy-based entity extractor with satellite-specific patterns.
+"""spaCy-based entity extractor with domain-specific patterns.
 
 This module wraps a spaCy pipeline with an EntityRuler and a domain term matcher
-to recognize both general and satellite-specific entities. Entities are returned
+to recognize both general and domain-specific entities. Entities are returned
 with spans, context, and heuristic confidence scores.
 """
 
@@ -120,7 +120,7 @@ class SpacyExtractor:
         before_component = "ner" if "ner" in self.nlp.pipe_names else None
         ruler = self.nlp.add_pipe(
             "entity_ruler",
-            name="satellite_entity_ruler",
+            name="domain_entity_ruler",
             before=before_component,
             config={"validate": True},
         )
@@ -151,32 +151,31 @@ class SpacyExtractor:
         return ruler
 
     def _build_domain_matcher(self) -> Tuple[PhraseMatcher, Dict[int, str]]:
-        """Create a PhraseMatcher for common satellite terms."""
+        """Create a PhraseMatcher for common domain terms."""
         matcher = PhraseMatcher(self.nlp.vocab, attr="LOWER")
         label_map: Dict[int, str] = {}
 
         domain_terms: Dict[str, Sequence[str]] = {
             "SYSTEM": [
                 "bus",
-                "payload module",
-                "spacecraft bus",
-                "attitude control system",
+                "system bus",
+                "control system",
+                "data acquisition system",
             ],
             "SUBSYSTEM": [
                 "power subsystem",
                 "thermal control subsystem",
                 "communication subsystem",
-                "command and data handling subsystem",
-                "guidance navigation and control",
+                "data handling subsystem",
+                "safety subsystem",
             ],
             "COMPONENT": [
-                "reaction wheel",
-                "star tracker",
-                "sun sensor",
-                "magnetorquer",
-                "solar array drive assembly",
+                "motor controller",
+                "sensor module",
+                "temperature sensor",
+                "power supply unit",
                 "battery management unit",
-                "onboard computer",
+                "embedded controller",
             ],
             "PARAMETER": [
                 "state of charge",
@@ -185,9 +184,9 @@ class SpacyExtractor:
                 "propellant pressure",
             ],
             "PROCEDURE": [
-                "safe mode entry",
-                "antenna deployment",
-                "reaction wheel desaturation",
+                "startup procedure",
+                "shutdown procedure",
+                "calibration procedure",
             ],
         }
 

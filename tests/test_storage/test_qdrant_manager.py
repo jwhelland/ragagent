@@ -53,9 +53,9 @@ def sample_chunks() -> List[dict]:
             "chunk_id": str(uuid.uuid4()),
             "document_id": doc_id,
             "level": 3,  # subsection level
-            "content": f"This is test chunk {i} about satellite systems and procedures.",
+            "content": f"This is test chunk {i} about technical systems and procedures.",
             "metadata": {
-                "document_title": "Test Satellite Manual",
+                "document_title": "Test Technical Manual",
                 "section_title": f"Section {i}",
                 "page_numbers": [i + 1, i + 2],
                 "hierarchy_path": f"1.{i}.1",
@@ -96,7 +96,7 @@ def sample_entities() -> List[dict]:
             "entity_id": str(uuid.uuid4()),
             "canonical_name": "power_subsystem",
             "entity_type": "SYSTEM",
-            "description": "The electrical power subsystem manages satellite power distribution",
+            "description": "The electrical power subsystem manages power distribution",
             "aliases": ["EPS", "Electrical Power System", "Power System"],
             "related_entity_ids": [str(uuid.uuid4())],
         },

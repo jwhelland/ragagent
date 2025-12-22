@@ -280,7 +280,7 @@ These tasks are on the critical path and must be completed for project success:
 ### Core System (Phases 1-6)
 The core system is complete when:
 
-1. ☐ System can ingest 100+ satellite PDFs
+1. ☐ System can ingest 100+ technical PDFs
 2. ☐ Entities and relationships extracted with >80% accuracy
 3. ☐ Curation workflow allows efficient review
 4. ☐ Interactive review interface allows >30 candidates/hour throughput

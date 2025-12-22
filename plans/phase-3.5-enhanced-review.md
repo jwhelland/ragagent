@@ -67,7 +67,7 @@ Transform the current command-based CLI into an interactive TUI (Text User Inter
 │ ► [1] power_subsystem                                              [0.95] ⭐ │
 │     Type: SYSTEM | Mentions: 45 | Docs: 12                                  │
 │     Aliases: EPS, Electrical Power System, Power System                      │
-│     Description: Manages satellite electrical power generation and...        │
+│     Description: Manages electrical power generation and...                 │
 │     ───────────────────────────────────────────────────────────────────────  │
 │     Actions: [A]pprove  [R]eject  [E]dit  [M]erge  [F]lag                  │
 │                                                                               │

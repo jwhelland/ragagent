@@ -9,8 +9,8 @@ from src.utils.config import SpacyConfig
 
 def _write_patterns(tmp_path: Path) -> Path:
     patterns = [
-        {"label": "SYSTEM", "pattern": [{"LOWER": "spacecraft"}, {"LOWER": "bus"}]},
-        {"label": "COMPONENT", "pattern": [{"LOWER": "reaction"}, {"LOWER": "wheel"}]},
+        {"label": "SYSTEM", "pattern": [{"LOWER": "system"}, {"LOWER": "bus"}]},
+        {"label": "COMPONENT", "pattern": [{"LOWER": "motor"}, {"LOWER": "controller"}]},
     ]
     path = tmp_path / "patterns.jsonl"
     path.write_text("\n".join(json.dumps(p) for p in patterns))
@@ -33,7 +33,7 @@ def test_spacy_extractor_with_patterns_and_domain_terms(tmp_path: Path) -> None:
     extractor = SpacyExtractor(config=config, nlp=_build_nlp())
 
     chunk = {
-        "content": "The spacecraft bus uses a reaction wheel for attitude control.",
+        "content": "The system bus uses a motor controller in the power subsystem.",
         "chunk_id": "c1",
         "document_id": "doc1",
     }
@@ -41,8 +41,8 @@ def test_spacy_extractor_with_patterns_and_domain_terms(tmp_path: Path) -> None:
     results = extractor.extract_from_chunks([chunk])
     entities = results.get("c1", [])
 
-    assert {e.label for e in entities} == {"SYSTEM", "COMPONENT"}
-    assert {e.text for e in entities} == {"spacecraft bus", "reaction wheel"}
+    assert {e.label for e in entities} == {"SYSTEM", "SUBSYSTEM", "COMPONENT"}
+    assert {e.text for e in entities} == {"system bus", "power subsystem", "motor controller"}
     assert all(0.0 <= e.confidence <= 1.0 for e in entities)
     assert all(e.sentence for e in entities)
     sources = {e.metadata.get("source") if e.metadata else None for e in entities}
@@ -59,7 +59,7 @@ def test_spacy_extractor_respects_confidence_threshold(tmp_path: Path) -> None:
     extractor = SpacyExtractor(config=config, nlp=_build_nlp())
 
     chunk = {
-        "content": "The spacecraft bus uses a reaction wheel for attitude control.",
+        "content": "The system bus uses a motor controller in the power subsystem.",
         "chunk_id": "c1",
         "document_id": "doc1",
     }

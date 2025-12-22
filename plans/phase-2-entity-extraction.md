@@ -15,12 +15,12 @@ This phase implements the entity and relationship extraction system using both s
 **Dependencies:** Task 1.10
 
 **Description:**
-Set up spaCy NER pipeline with domain-specific patterns for satellite terminology.
+Set up spaCy NER pipeline with domain-specific patterns for technical terminology.
 
 **Steps:**
 1. Create [`src/extraction/spacy_extractor.py`] with `SpacyExtractor` class
 2. Load transformer-based English model (`en_core_web_lg`)
-3. Create custom entity patterns for satellite domain
+3. Create custom entity patterns for technical domain
 4. Add custom pipeline component for domain terms
 5. Implement entity extraction from chunks
 6. Add confidence scoring based on context
@@ -34,7 +34,7 @@ Set up spaCy NER pipeline with domain-specific patterns for satellite terminolog
 
 **Acceptance Criteria:**
 - Extracts standard entities (ORG, PRODUCT, etc.)
-- Recognizes satellite-specific terms
+- Recognizes domain-specific terms
 - Confidence scores between 0-1
 - Fast processing (>1000 tokens/second)
 - Configurable pattern matching rules
@@ -85,7 +85,7 @@ Implement unified LLM integration that works with either Anthropic or OpenAI API
 **Dependencies:** Task 2.2
 
 **Description:**
-Design and test prompts for accurate entity and relationship extraction from satellite documents.
+Design and test prompts for accurate entity and relationship extraction from technical documents.
 
 **Steps:**
 1. Create entity extraction prompt with examples

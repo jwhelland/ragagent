@@ -35,7 +35,7 @@ def main() -> None:
     example_queries = [
         "What is the Electrical Power System?",
         "What components are contained in the attitude control subsystem?",
-        "How to perform the spacecraft startup procedure?",
+        "How to perform the system startup procedure?",
         "Show entities with confidence greater than 0.8",
         "What systems depend on the battery controller?",
         "Explain how the EPS works",  # Tests acronym expansion

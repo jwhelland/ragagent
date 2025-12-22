@@ -13,7 +13,7 @@ Package initialization file that exports all schema models and the Neo4jManager 
 Pydantic models for all entity types, relationships, and chunks.
 
 #### Entity Types (12 total)
-1. **SYSTEM** - Top-level satellite systems
+1. **SYSTEM** - Top-level technical systems
 2. **SUBSYSTEM** - Components within systems
 3. **COMPONENT** - Individual parts
 4. **PARAMETER** - Measurable values

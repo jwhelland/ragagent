@@ -187,7 +187,7 @@ class Entity(BaseModel):
 
 
 class System(Entity):
-    """Top-level satellite system entity."""
+    """Top-level technical system entity."""
 
     entity_type: Literal[EntityType.SYSTEM] = EntityType.SYSTEM
     subsystems: List[str] = Field(default_factory=list, description="List of subsystem IDs")

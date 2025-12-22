@@ -167,7 +167,7 @@ print(f"Upserted {count} chunks")
 
 ```python
 # Basic search
-query_vector = generate_embedding("satellite power systems")
+query_vector = generate_embedding("power system procedures")
 results = manager.search_chunks(
     query_vector=query_vector,
     top_k=20,
@@ -225,7 +225,7 @@ entities = [
         "entity_id": "entity-uuid-1",
         "canonical_name": "power_subsystem",
         "entity_type": "SYSTEM",
-        "description": "Manages satellite electrical power...",
+        "description": "Manages electrical power...",
         "aliases": ["EPS", "Electrical Power System"],
         "related_entity_ids": ["related-uuid-1"],
     },

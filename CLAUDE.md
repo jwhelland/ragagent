@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Graph RAG (Retrieval-Augmented Generation) system for processing satellite technical documents. It combines vector similarity search with knowledge graph traversal using Neo4j (graph) and Qdrant (vectors). The system extracts entities and relationships using both spaCy NER and LLM extraction, with entity deduplication and manual curation capabilities.
+This is a Graph RAG (Retrieval-Augmented Generation) system for processing technical documents. It combines vector similarity search with knowledge graph traversal using Neo4j (graph) and Qdrant (vectors). The system extracts entities and relationships using both spaCy NER and LLM extraction, with entity deduplication and manual curation capabilities.
 
 ## Common Development Commands
 

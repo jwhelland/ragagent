@@ -210,7 +210,6 @@ class QueryParser:
         "system": ["subsystem", "module", "unit"],
         "component": ["part", "element", "unit"],
         "procedure": ["process", "operation", "workflow"],
-        "satellite": ["spacecraft", "vehicle"],
         "power": ["electrical", "energy"],
         "data": ["information", "telemetry"],
         "command": ["instruction", "control"],

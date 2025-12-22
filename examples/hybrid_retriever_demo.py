@@ -266,7 +266,7 @@ def demo_graceful_fallback():
     query_parser = QueryParser(config=config)
 
     # Query without entities (graph retrieval may return no results)
-    parsed_query = query_parser.parse("general information about satellite operations")
+    parsed_query = query_parser.parse("general information about technical operations")
 
     print(f"Query: {parsed_query.original_text}")
     print(f"Entity mentions: {len(parsed_query.entity_mentions)}")

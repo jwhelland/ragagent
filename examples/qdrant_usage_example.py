@@ -70,10 +70,10 @@ def main() -> None:
             "chunk_id": str(uuid.uuid4()),
             "document_id": doc_id,
             "level": 3,  # subsection level
-            "content": f"This chunk discusses satellite power system procedures. "
+            "content": f"This chunk discusses power system procedures. "
             f"Section {i} covers initialization and monitoring steps.",
             "metadata": {
-                "document_title": "Satellite Power System Manual",
+                "document_title": "Power System Manual",
                 "section_title": f"Power Management Section {i}",
                 "page_numbers": [i * 2 + 1, i * 2 + 2],
                 "hierarchy_path": f"1.2.{i}",
@@ -99,7 +99,7 @@ def main() -> None:
             "canonical_name": "power_subsystem",
             "entity_type": "SYSTEM",
             "description": "The electrical power subsystem manages power generation, "
-            "storage, and distribution throughout the satellite",
+            "storage, and distribution throughout the system",
             "aliases": ["EPS", "Electrical Power System", "Power System"],
             "related_entity_ids": [],
         },

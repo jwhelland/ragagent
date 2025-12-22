@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-This document outlines the architecture for a graph-based Retrieval-Augmented Generation (RAG) system designed to process 100-500 satellite technical documents and standard operating procedures. The system combines vector similarity search with knowledge graph traversal to enable complex queries across technical documentation.
+This document outlines the architecture for a graph-based Retrieval-Augmented Generation (RAG) system designed to process 100-500 technical documents and standard operating procedures. The system combines vector similarity search with knowledge graph traversal to enable complex queries across technical documentation.
 
 **Key Design Principles:**
 - Configurable LLM: Use Anthropic (local) or OpenAI API based on configuration
@@ -66,7 +66,7 @@ graph TB
 {
     "document_id": "uuid",
     "metadata": {
-        "filename": "satellite_sop_001.pdf",
+        "filename": "technical_sop_001.pdf",
         "title": "Power Subsystem Operating Procedures",
         "version": "2.3",
         "date": "2024-12-01",
@@ -202,13 +202,13 @@ Rewritten text that is more concise and readable while preserving all critical i
 **Stage 1: Baseline Extraction (spaCy NER)**
 - Fast, rule-based extraction
 - Focus on standard entities: organizations, systems, technologies
-- Custom domain-specific patterns for satellite terminology
+- Custom domain-specific patterns for technical terminology
 - Confidence scoring based on context
 
 **Stage 2: LLM-Enhanced Extraction**
 - **Configurable LLM:** Use either Anthropic (local) or OpenAI API based on configuration
 - Structured output format for entities and relationships
-- Prompt engineering for satellite domain
+- Prompt engineering for technical domain
 - Same interface regardless of backend (Anthropic or OpenAI)
 
 **Extraction Flow:**
@@ -225,7 +225,7 @@ graph LR
 #### 2.2 Entity Types (Initial Schema)
 
 **Core Entity Categories:**
-1. **SYSTEM**: Top-level satellite systems (Power, Thermal, Communications)
+1. **SYSTEM**: Top-level technical systems (Power, Thermal, Communications)
 2. **SUBSYSTEM**: Components within systems (Battery, Solar Array, Transponder)
 3. **COMPONENT**: Individual parts (Sensor, Actuator, Circuit)
 4. **PARAMETER**: Measurable values (Temperature, Voltage, Pressure)
@@ -377,7 +377,7 @@ CREATE (s:System {
     canonical_name: 'power_subsystem',
     aliases: ['Power System', 'EPS', 'Electrical Power Subsystem'],
     entity_type: 'SYSTEM',
-    description: 'Manages satellite electrical power',
+    description: 'Manages electrical power',
     confidence_score: 0.95,
     first_seen: datetime(),
     last_updated: datetime(),
@@ -630,7 +630,7 @@ Query: "What procedures must be followed before deploying the solar array?"
 - Cypher: `MATCH (start:ProcedureStep {name: 'thermal_initialization'})-[:PRECEDES*]->(next) RETURN next ORDER BY depth`
 
 **Semantic Concept Queries:**
-- Example: "Explain redundancy in satellite power systems"
+- Example: "Explain redundancy in power systems"
 - Strategy: Vector-first with graph expansion
 - Process: Vector search for "redundancy" → expand to connected entities in power domain
 
@@ -670,7 +670,7 @@ final_score = (
 ```python
 {
     "document_id": "uuid",
-    "filename": "satellite_sop_001.pdf",
+    "filename": "technical_sop_001.pdf",
     "version": "2.3",
     "checksum": "sha256_hash",
     "last_processed": "2024-12-14T08:00:00Z",
@@ -1316,7 +1316,7 @@ See [`enhancements-summary.md`](enhancements-summary.md) for full implementation
 
 ## Conclusion
 
-This architecture provides a solid foundation for building a graph RAG system tailored to satellite technical documentation. The design prioritizes:
+This architecture provides a solid foundation for building a graph RAG system tailored to technical documentation. The design prioritizes:
 
 - **Flexibility:** Configurable LLM backend (local or API)
 - **Flexibility:** Hierarchical chunks and multiple retrieval strategies

@@ -2,8 +2,8 @@
 
 entity_extraction:
   system: |
-    You are an expert at extracting structured entities from satellite and spacecraft operations
-    documents. Follow the provided schema exactly and keep outputs deterministic. Avoid Markdown,
+    You are an expert at extracting structured entities from technical and engineering documents.
+    Follow the provided schema exactly and keep outputs deterministic. Avoid Markdown,
     preambles, or explanations. Prefer evidence-backed entities; when nothing qualifies, respond
     with an object whose "entities" value is an empty list. Normalize entity names to lower_snake_case
     and keep abbreviations in aliases.
@@ -12,7 +12,7 @@ entity_extraction:
     Extract entities from the text using the schema and allowed labels below.
 
     Entity types (choose only these):
-    - SYSTEM: spacecraft-level or ground system providing mission-wide function
+    - SYSTEM: system-level or facility-level system providing a top-level function
     - SUBSYSTEM: major platform partition (power, communications, thermal, GNC, payload)
     - COMPONENT: hardware or software element inside a subsystem
     - PARAMETER: tunable value, telemetry field, or threshold
@@ -86,8 +86,8 @@ entity_extraction:
 
 relationship_extraction:
   system: |
-    You are an expert at identifying relationships between entities in satellite and spacecraft
-    documents. Use the provided schema and keep outputs machine-parsable JSON only. Prefer concise,
+    You are an expert at identifying relationships between entities in technical documents.
+    Use the provided schema and keep outputs machine-parsable JSON only. Prefer concise,
     evidence-backed descriptions; when no relationships are present, respond with an object whose
     "relationships" value is an empty list.
 
@@ -284,7 +284,7 @@ few_shot_examples:
           confidence: 0.95
         - name: "battery_charging"
           type: "PROCEDURE"
-          description: "Process of charging satellite batteries"
+          description: "Process of charging system batteries"
           aliases: ["battery charge", "charging procedure"]
           confidence: 0.90
         - name: "solar_array"

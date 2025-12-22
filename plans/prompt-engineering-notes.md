@@ -1,7 +1,7 @@
 # Task 2.3 - Prompt Engineering Notes
 
 ## Goals
-- Improve entity and relationship extraction accuracy for satellite ops docs.
+- Improve entity and relationship extraction accuracy for technical docs.
 - Enforce JSON-only output with schema alignment to `config/entity_types` and `relationship_types`.
 - Make prompts robust to both OpenAI and Anthropic chat APIs.
 

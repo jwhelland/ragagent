@@ -15,7 +15,7 @@
 {"label":"PROCEDURE","pattern":[{"LOWER":{"IN":["initialization","test","checkout"]}}]}
 {"label":"ANOMALY","pattern":[{"LOWER":{"IN":["failure","fault","error"]}}]}
 {"label":"ANOMALY","pattern":[{"LOWER":{"IN":["anomaly","malfunction","degradation"]}}]}
-{"label":"SYSTEM","pattern":[{"LOWER":"spacecraft"},{"LOWER":{"IN":["bus","platform"]}}]}
+{"label":"SYSTEM","pattern":[{"LOWER":"system"},{"LOWER":{"IN":["bus","platform"]}}]}
 {"label":"SYSTEM","pattern":[{"LOWER":"payload"},{"LOWER":{"IN":["module","bay"]}}]}
 {"label":"SUBSYSTEM","pattern":[{"LOWER":"power"},{"LOWER":"subsystem"}]}
 {"label":"SUBSYSTEM","pattern":[{"LOWER":"thermal"},{"LOWER":"control"},{"LOWER":"subsystem"}]}

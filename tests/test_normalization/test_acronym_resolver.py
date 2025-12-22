@@ -33,13 +33,13 @@ def test_context_disambiguation_prefers_matching_context() -> None:
     resolver = AcronymResolver()
     resolver.build_dictionary_from_texts(
         [
-            "The Power Distribution Unit (PDU) conditions spacecraft power buses.",
+            "The Power Distribution Unit (PDU) conditions system power buses.",
             "Protocol Data Unit (PDU) defines a network layer packet structure.",
         ]
     )
 
     network_context = "Each protocol data unit travels through the network stack."
-    power_context = "The spacecraft replaced the old PDU in the power bay."
+    power_context = "The system replaced the old PDU in the power bay."
 
     network_resolution = resolver.resolve("PDU", context=network_context)
     power_resolution = resolver.resolve("PDU", context=power_context)

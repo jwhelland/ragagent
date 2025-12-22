@@ -44,7 +44,7 @@ def test_llm_extractor_parses_entity_response(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(extractor, "_call_openai", fake_openai)
 
     chunk = {
-        "content": "The spacecraft uses a solar array for primary power generation.",
+        "content": "The system uses a solar array for primary power generation.",
         "chunk_id": "chunk-1",
         "document_id": "doc-1",
         "metadata": {"document_title": "Power System", "section_title": "EPS"},

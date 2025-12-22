@@ -20,7 +20,7 @@ def test_clusters_similar_entities_and_ranks_merge_candidates() -> None:
         EntityRecord(
             entity_id="acs-1",
             name="Attitude Control System",
-            description="Controls spacecraft orientation",
+            description="Controls system orientation",
             entity_type="SYSTEM",
             mention_count=5,
         ),

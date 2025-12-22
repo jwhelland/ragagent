@@ -217,7 +217,7 @@ Create comprehensive report generator for entity discovery results.
 Create demonstration materials and example workflows.
 
 **Steps:**
-1. Create sample satellite documents (if possible)
+1. Create sample technical documents (if possible)
 2. Build demo ingestion workflow
 3. Create demo query examples
 4. Document entity curation workflow with examples
@@ -303,7 +303,7 @@ Final integration testing and system validation before delivery.
 
 The project is complete when:
 
-1. ✅ System can ingest 100+ satellite PDFs
+1. ✅ System can ingest 100+ technical PDFs
 2. ✅ Entities and relationships extracted with >80% accuracy
 3. ✅ Curation workflow allows efficient review
 4. ✅ Hybrid retrieval returns relevant results in <2s
