@@ -25,14 +25,23 @@ jobs:
         image: qdrant/qdrant:latest
         ports:
           - 6333:6333
-        options: >-
-          --health-cmd "curl -fsS http://localhost:6333/collections || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 12
+
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Wait for Qdrant
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:6333/readyz >/dev/null; then
+              echo "Qdrant is ready"
+              exit 0
+            fi
+            echo "Waiting for Qdrant..."
+            sleep 2
+          done
+          echo "Qdrant did not become ready in time" >&2
+          exit 1
+
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
         
