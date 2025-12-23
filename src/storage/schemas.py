@@ -346,12 +346,19 @@ class RelationshipType(str, Enum):
     PART_OF = "PART_OF"
     CONTAINS = "CONTAINS"
     DEPENDS_ON = "DEPENDS_ON"
+    IS_A = "IS_A"
 
     # Functional relationships
     CONTROLS = "CONTROLS"
     MONITORS = "MONITORS"
     PROVIDES_POWER_TO = "PROVIDES_POWER_TO"
     SENDS_DATA_TO = "SENDS_DATA_TO"
+    PROVIDES = "PROVIDES"
+    SUPPORTS = "SUPPORTS"
+    REQUIRES = "REQUIRES"
+    CONNECTS_TO = "CONNECTS_TO"
+    TRIGGERS = "TRIGGERS"
+    CAUSES = "CAUSES"
 
     # Procedural relationships
     REFERENCES = "REFERENCES"
@@ -364,6 +371,7 @@ class RelationshipType(str, Enum):
     SIMILAR_TO = "SIMILAR_TO"
     CAUSED_BY = "CAUSED_BY"
     MITIGATED_BY = "MITIGATED_BY"
+    RELATED_TO = "RELATED_TO"
 
     # Table/Figure relationships
     REFERENCES_TABLE = "REFERENCES_TABLE"
@@ -394,7 +402,8 @@ class RelationshipProvenance(BaseModel):
         default=1.0, ge=0.0, le=1.0, description="Confidence of extraction"
     )
     source_extractor: Optional[str] = Field(
-        None, description="Name of the extractor that found this relationship (e.g., spacy_dependency, regex_patterns)"
+        None,
+        description="Name of the extractor that found this relationship (e.g., spacy_dependency, regex_patterns)",
     )
 
 

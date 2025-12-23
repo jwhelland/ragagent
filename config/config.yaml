@@ -43,7 +43,7 @@ ingestion:
     min_chunk_size: 100
 
 extraction:
-  enable_llm: true
+  enable_llm: false
   llm_prompt_template: "config/extraction_prompts.yaml"
   spacy:
     model: "en_core_web_lg"
@@ -55,8 +55,6 @@ extraction:
     provider: "openai"
     base_url: "https://api.openai.com/v1"
     # model: "gpt-4.1-mini"
-    temperature: 0.1
-    max_tokens: 2000
     timeout: 60
     retry_attempts: 3
 

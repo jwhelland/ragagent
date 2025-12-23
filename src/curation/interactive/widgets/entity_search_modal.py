@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -66,7 +67,6 @@ class EntitySearchModal(ModalScreen[Optional[Dict[str, Any]]]):
     .result-desc {
         color: $text-muted;
         margin-left: 2;
-        font-size: 0.9em;
     }
 
     #button-container {
@@ -132,7 +132,7 @@ class EntitySearchModal(ModalScreen[Optional[Dict[str, Any]]]):
                 status=EntityStatus.APPROVED,
                 limit=20
             )
-            self.call_from_thread(self.update_results, results)
+            self.app.call_from_thread(self.update_results, results)
         except Exception as e:
             logger.error(f"Search failed: {e}")
 

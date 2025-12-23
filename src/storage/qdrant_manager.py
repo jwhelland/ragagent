@@ -16,9 +16,9 @@ Features:
     - Error handling and retry logic
 """
 
-import logging
 from typing import Any, Dict, List, Optional, Tuple
 
+from loguru import logger
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
 from qdrant_client.models import (
@@ -35,8 +35,6 @@ from qdrant_client.models import (
 )
 
 from ..utils.config import DatabaseConfig
-
-logger = logging.getLogger(__name__)
 
 
 class QdrantManager:

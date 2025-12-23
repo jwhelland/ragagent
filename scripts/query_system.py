@@ -9,9 +9,15 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
+
+# Suppress HuggingFace tokenizers parallelism warning
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from datetime import datetime
 from typing import Any, Dict, List
+
 
 from loguru import logger
 from rich.console import Console
@@ -53,7 +59,7 @@ class QueryInterface:
         # Initialize managers
         try:
             self.neo4j = Neo4jManager(config=self.config.database)
-            self.neo4j.connect()
+            self.neo4j.connect(debug=verbose)
 
             self.query_parser = QueryParser(config=self.config)
             self.hybrid_retriever = HybridRetriever(config=self.config, neo4j_manager=self.neo4j)

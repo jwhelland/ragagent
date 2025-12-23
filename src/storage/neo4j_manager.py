@@ -1,11 +1,11 @@
 """Neo4j graph database manager for entity, relationship, and candidate storage."""
 
-import logging
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from loguru import logger
 from neo4j import GraphDatabase, Session
 from neo4j.exceptions import Neo4jError
 from neo4j.time import Date, DateTime, Time
@@ -22,8 +22,6 @@ from src.storage.schemas import (
     RelationshipType,
 )
 from src.utils.config import DatabaseConfig
-
-logger = logging.getLogger(__name__)
 
 
 class Neo4jManager:
@@ -53,15 +51,25 @@ class Neo4jManager:
         self.driver = None
         self._connected = False
 
-    def connect(self) -> None:
+    def connect(self, debug: bool = False) -> None:
         """Establish connection to Neo4j database.
+
+        Args:
+            debug: Whether to enable debug logging and notifications
 
         Raises:
             Neo4jError: If connection fails
         """
         try:
+            # Configure notification severity based on debug flag
+            # Suppress warnings (like missing relationship types) unless debugging
+            notifications_min_severity = "WARNING" if debug else "OFF"
+
             self.driver = GraphDatabase.driver(
-                self.uri, auth=(self.user, self.password), max_connection_pool_size=50
+                self.uri,
+                auth=(self.user, self.password),
+                max_connection_pool_size=50,
+                notifications_min_severity=notifications_min_severity,
             )
             # Verify connectivity
             self.driver.verify_connectivity()
@@ -280,8 +288,7 @@ class Neo4jManager:
             # Create index on document_id for chunks
             try:
                 session.run(
-                    "CREATE INDEX chunk_document_id IF NOT EXISTS "
-                    "FOR (c:Chunk) ON (c.document_id)"
+                    "CREATE INDEX chunk_document_id IF NOT EXISTS FOR (c:Chunk) ON (c.document_id)"
                 )
                 logger.info("Created document_id index for chunks")
             except Neo4jError as e:
@@ -510,7 +517,7 @@ class Neo4jManager:
         self,
         keys: List[str],
         *,
-        status: Optional[str] = "pending",
+        statuses: Optional[List[str]] = None,
         limit: int = 200,
     ) -> List[Dict[str, Any]]:
         """Return RelationshipCandidate nodes where source/target key matches any of the given keys."""
@@ -520,17 +527,96 @@ class Neo4jManager:
             result = session.run(
                 """
                 MATCH (c:RelationshipCandidate)
-                WHERE ($status IS NULL OR c.status = $status)
+                WHERE ($statuses IS NULL OR c.status IN $statuses)
                   AND any(k IN $keys WHERE c.candidate_key STARTS WITH (k + ':')
                                    OR c.candidate_key ENDS WITH (':' + k))
                 RETURN c
                 LIMIT $limit
                 """,
                 keys=keys,
-                status=status,
+                statuses=statuses,
                 limit=limit,
             )
             return [self._convert_neo4j_temporals(dict(record["c"])) for record in result]
+
+    def get_pending_relationships_with_peer_status(
+        self,
+        identifiers: List[str],
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        Find pending relationship candidates involving the given identifiers (names/aliases).
+        Returns the relationship candidate plus the status of the *other* endpoint.
+
+        Args:
+            identifiers: List of normalized names/keys identifying the 'focal' entity.
+        """
+        if not identifiers:
+            return []
+
+        # We need to match raw source/target strings from the candidate against our list of identifiers.
+        # Since we don't know exactly how they were normalized in the candidate_key, checking source/target properties is safer.
+        with self.session() as session:
+            query = """
+            MATCH (rc:RelationshipCandidate {status: 'pending'})
+            WHERE toLower(trim(rc.source)) IN $identifiers OR toLower(trim(rc.target)) IN $identifiers
+
+            WITH rc,
+                 CASE WHEN toLower(trim(rc.source)) IN $identifiers THEN rc.target ELSE rc.source END as peer_name
+
+            // Check if peer exists as a Candidate
+            OPTIONAL MATCH (peer_cand:EntityCandidate)
+            WHERE toLower(peer_cand.canonical_name) = toLower(peer_name)
+               OR any(a IN peer_cand.aliases WHERE toLower(a) = toLower(peer_name))
+
+            // Check if peer exists as an Approved Entity
+            OPTIONAL MATCH (peer_ent)
+            WHERE any(l IN labels(peer_ent) WHERE l IN $entity_types)
+              AND (toLower(peer_ent.canonical_name) = toLower(peer_name)
+                   OR any(a IN peer_ent.aliases WHERE toLower(a) = toLower(peer_name)))
+
+            RETURN rc,
+                   peer_name,
+                   peer_cand.id as peer_candidate_id,
+                   peer_cand.candidate_key as peer_candidate_key,
+                   peer_cand.status as peer_candidate_status,
+                   peer_ent.id as peer_entity_id,
+                   peer_ent.status as peer_entity_status
+            LIMIT $limit
+            """
+
+            # Neo4j IN operator is case-sensitive, so we lower-case everything for the query params
+            lower_identifiers = [i.lower() for i in identifiers]
+            entity_types = [et.value for et in EntityType]
+
+            result = session.run(
+                query, identifiers=lower_identifiers, entity_types=entity_types, limit=limit
+            )
+
+            rows = []
+            for record in result:
+                row = {
+                    "relationship": self._convert_neo4j_temporals(dict(record["rc"])),
+                    "peer_name": record["peer_name"],
+                    "peer_candidate": None,
+                    "peer_entity": None,
+                }
+
+                if record["peer_candidate_key"]:
+                    row["peer_candidate"] = {
+                        "id": record["peer_candidate_id"],
+                        "candidate_key": record["peer_candidate_key"],
+                        "status": record["peer_candidate_status"],
+                    }
+
+                if record["peer_entity_id"]:
+                    row["peer_entity"] = {
+                        "id": record["peer_entity_id"],
+                        "status": record["peer_entity_status"],
+                    }
+                rows.append(row)
+
+            return rows
 
     def update_relationship_candidate_status(
         self, identifier: str, status: CandidateStatus
@@ -696,7 +782,7 @@ class Neo4jManager:
         """
         with self.session() as session:
             query = f"""
-            CREATE (n:{entity.entity_type.value} $props)
+            CREATE (n:Entity:{entity.entity_type.value} $props)
             RETURN n.id as id
             """
             result = session.run(query, props=entity.to_neo4j_dict())
@@ -717,7 +803,7 @@ class Neo4jManager:
         """
         with self.session() as session:
             query = f"""
-            MERGE (n:{entity.entity_type.value} {{id: $entity_id}})
+            MERGE (n:Entity:{entity.entity_type.value} {{id: $entity_id}})
             SET n += $props
             RETURN n.id as id
             """
@@ -1446,6 +1532,21 @@ class Neo4jManager:
                 "entities_by_type": entity_counts,
                 "relationships_by_type": relationship_counts,
             }
+
+    def get_existing_relationship_types(self) -> List[str]:
+        """Get list of relationship types that actually exist in the database.
+
+        Returns:
+            List of relationship type strings
+        """
+        with self.session() as session:
+            result = session.run(
+                """
+                CALL db.relationshipTypes() YIELD relationshipType
+                RETURN relationshipType
+                """
+            )
+            return [record["relationshipType"] for record in result]
 
     def clear_database(self) -> None:
         """Clear all nodes and relationships from database (use with caution).

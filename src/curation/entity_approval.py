@@ -261,6 +261,8 @@ class EntityCurationService:
             properties={
                 "chunk_ids": chunk_ids,
                 "merged_candidate_keys": [c.candidate_key for c in all_candidates],
+                "candidate_key": primary.candidate_key,
+                "display_name": primary.canonical_name,
             },
         )
         entity_id = self.manager.upsert_entity(entity)
@@ -394,6 +396,74 @@ class EntityCurationService:
         )
         return True
 
+    def approve_relationship_candidate(self, candidate: RelationshipCandidate) -> str | None:
+        """Approve a relationship candidate.
+
+        If endpoints are resolved/approved, creates the Relationship.
+        Otherwise, just marks status as APPROVED.
+        """
+        identifier = candidate.id or candidate.candidate_key
+        previous_status = candidate.status
+        self.manager.update_relationship_candidate_status(identifier, CandidateStatus.APPROVED)
+
+        # Try to promote immediately
+        relationship_candidate_statuses = self._promote_related_relationship_candidates(
+            raw_mentions=[candidate.source, candidate.target]
+        )
+
+        # Check if this specific candidate was promoted (it would be in the returned list)
+        is_promoted = any(
+            s.identifier == identifier and s.previous_status == CandidateStatus.APPROVED
+            for s in relationship_candidate_statuses
+        )
+
+        # Note: _promote_related_relationship_candidates actually updates the status to APPROVED
+        # again if successful, which is fine. The previous status we want to undo to is the
+        # original one (likely PENDING).
+
+        self._push_undo(
+            UndoAction(
+                operation="approve_relationship_candidate",
+                relationship_candidate_statuses=[
+                    StatusCheckpoint(identifier=identifier, previous_status=previous_status)
+                ]
+                + [s for s in relationship_candidate_statuses if s.identifier != identifier],
+                # If we promoted others (unlikely but possible if names match), include them
+            )
+        )
+
+        self._record_audit(
+            "approve_relationship_candidate",
+            {
+                "candidate_key": candidate.candidate_key,
+                "source": candidate.source,
+                "target": candidate.target,
+                "promoted": is_promoted,
+            },
+        )
+        return identifier
+
+    def reject_relationship_candidate(
+        self, candidate: RelationshipCandidate, reason: str = ""
+    ) -> None:
+        """Reject a relationship candidate."""
+        identifier = candidate.id or candidate.candidate_key
+        previous_status = candidate.status
+        self.manager.update_relationship_candidate_status(identifier, CandidateStatus.REJECTED)
+
+        self._push_undo(
+            UndoAction(
+                operation="reject_relationship_candidate",
+                relationship_candidate_statuses=[
+                    StatusCheckpoint(identifier=identifier, previous_status=previous_status)
+                ],
+            )
+        )
+        self._record_audit(
+            "reject_relationship_candidate",
+            {"candidate_key": candidate.candidate_key, "reason": reason},
+        )
+
     def undo_last_operation(self) -> bool:
         """Undo the most recent curation operation."""
         if not self._undo_stack:
@@ -482,7 +552,11 @@ class EntityCurationService:
             status=status,
             mention_count=candidate.mention_count,
             source_documents=list(candidate.source_documents),
-            properties={"candidate_key": candidate.candidate_key, "chunk_ids": candidate.chunk_ids},
+            properties={
+                "candidate_key": candidate.candidate_key,
+                "chunk_ids": candidate.chunk_ids,
+                "display_name": candidate.canonical_name,
+            },
         )
 
     def _candidate_identifier(self, candidate: EntityCandidate) -> str:
@@ -579,7 +653,10 @@ class EntityCurationService:
         if not keys:
             return []
 
-        rows = self.manager.get_relationship_candidates_involving_keys(keys, status="pending")
+        rows = self.manager.get_relationship_candidates_involving_keys(
+            keys,
+            statuses=[CandidateStatus.PENDING.value, CandidateStatus.APPROVED.value],
+        )
         if not rows:
             return []
 
@@ -590,9 +667,19 @@ class EntityCurationService:
                 rc = RelationshipCandidate(**row)
             except Exception:  # noqa: BLE001
                 continue
+            if rc.status not in {CandidateStatus.PENDING, CandidateStatus.APPROVED}:
+                continue
 
-            source_record = self.normalization_table.lookup(rc.source)
-            target_record = self.normalization_table.lookup(rc.target)
+            if not (rc.source or "").strip() or not (rc.target or "").strip():
+                continue
+
+            try:
+                source_record = self.normalization_table.lookup(rc.source)
+                target_record = self.normalization_table.lookup(rc.target)
+            except Exception:  # noqa: BLE001
+                # Bad/empty normalization key or unexpected normalization errors should not
+                # break relationship promotion; just skip the candidate.
+                continue
             if not (source_record and target_record):
                 continue
             if (
@@ -601,6 +688,13 @@ class EntityCurationService:
             ):
                 continue
             if not (source_record.canonical_id and target_record.canonical_id):
+                continue
+            # If the normalization table points to an entity ID that doesn't exist in Neo4j
+            # (e.g., after resetting the DB without resetting the normalization table),
+            # skip promotion rather than failing the whole curation operation.
+            if not self.manager.get_entity(source_record.canonical_id):
+                continue
+            if not self.manager.get_entity(target_record.canonical_id):
                 continue
 
             try:
@@ -626,7 +720,10 @@ class EntityCurationService:
                 properties={"relationship_candidate_key": rc.candidate_key},
             )
 
-            self.manager.upsert_relationship(relationship)
+            try:
+                self.manager.upsert_relationship(relationship)
+            except Exception:  # noqa: BLE001
+                continue
             prev_status = rc.status
             self.manager.update_relationship_candidate_status(
                 rc.id or rc.candidate_key, CandidateStatus.APPROVED
@@ -673,3 +770,65 @@ class EntityCurationService:
 
     def _deterministic_uuid(self, key: str) -> str:
         return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
+
+
+class NeighborhoodIssue(BaseModel):
+    """Represents a pending relationship blocked by a peer entity's status."""
+
+    relationship_candidate: RelationshipCandidate
+    peer_name: str
+    issue_type: (
+        str  # "promotable" (peer approved), "resolvable" (peer pending), "missing" (peer unknown)
+    )
+    peer_candidate_key: str | None = None
+    peer_entity_id: str | None = None
+
+    def __str__(self) -> str:
+        return f"Relation '{self.relationship_candidate.type}' to '{self.peer_name}' is {self.issue_type}"
+
+
+def get_neighborhood_issues(
+    service: EntityCurationService, entity_name: str, aliases: List[str]
+) -> List[NeighborhoodIssue]:
+    """Identify pending relationships involving the given entity and classify the blocker."""
+    raw_identifiers = [text for text in [entity_name, *aliases] if (text or "").strip()]
+    normalized_identifiers = {
+        service._normalize_candidate_key(text) for text in raw_identifiers  # noqa: SLF001
+    }
+    identifiers = list({*raw_identifiers, *normalized_identifiers})
+    raw_issues = service.manager.get_pending_relationships_with_peer_status(identifiers)
+
+    issues: List[NeighborhoodIssue] = []
+    for row in raw_issues:
+        rc = RelationshipCandidate(**row["relationship"])
+        peer_name = row["peer_name"]
+        peer_cand = row["peer_candidate"]
+        peer_ent = row["peer_entity"]
+
+        issue_type = "missing"
+        peer_key = None
+        peer_id = None
+
+        if peer_ent and peer_ent.get("status") == "approved":
+            issue_type = "promotable"
+            peer_id = peer_ent.get("id")
+        elif peer_cand and peer_cand.get("status") == "pending":
+            issue_type = "resolvable"
+            peer_key = peer_cand.get("candidate_key")
+        elif peer_cand and peer_cand.get("status") == "rejected":
+            # If peer was explicitly rejected, we usually don't prompt again,
+            # but the relationship is still pending.
+            # For now, treat as "missing" (needs a new entity created) or "resolvable" (un-reject?)
+            # Let's treat as "missing" so user can force-create if they really want.
+            issue_type = "missing"
+
+        issues.append(
+            NeighborhoodIssue(
+                relationship_candidate=rc,
+                peer_name=peer_name,
+                issue_type=issue_type,
+                peer_candidate_key=peer_key,
+                peer_entity_id=peer_id,
+            )
+        )
+    return issues

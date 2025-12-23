@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 from src.curation.batch_operations import BatchCurationService
-from src.curation.entity_approval import EntityCurationService
+from src.curation.entity_approval import EntityCurationService, get_neighborhood_issues
 from src.normalization.normalization_table import (
     NormalizationMethod,
     NormalizationRecord,
@@ -48,6 +48,8 @@ class CandidateStore(Protocol):
     def search(self, query: str, *, limit: int) -> List[Dict[str, Any]]: ...
 
     def stats(self) -> Dict[str, Any]: ...
+
+    def relationship_stats(self) -> Dict[str, Any]: ...
 
     def close(self) -> None: ...
 
@@ -84,6 +86,29 @@ class Neo4jCandidateStore:
 
     def stats(self) -> Dict[str, Any]:
         return self._manager.get_entity_candidate_statistics()
+
+    def relationship_stats(self) -> Dict[str, Any]:
+        with self._manager.session() as session:
+            totals = session.run(
+                """
+                MATCH (c:RelationshipCandidate)
+                RETURN
+                    count(c) as total,
+                    count(CASE WHEN c.status = 'pending' THEN 1 END) as pending,
+                    count(CASE WHEN c.status = 'approved' THEN 1 END) as approved,
+                    count(CASE WHEN c.status = 'rejected' THEN 1 END) as rejected
+                """
+            ).single()
+
+            by_type = session.run(
+                """
+                MATCH (c:RelationshipCandidate)
+                RETURN c.type as candidate_type, count(c) as count
+                ORDER BY count DESC
+                """
+            ).data()
+
+            return {"totals": dict(totals) if totals else {}, "by_type": by_type}
 
     def close(self) -> None:
         self._manager.close()
@@ -155,6 +180,77 @@ def _ensure_candidate(store: CandidateStore, query: str) -> EntityCandidate:
         console.print("[red]No matching candidate found.[/red]")
         raise typer.Exit(code=1)
     return candidate
+
+
+def _handle_neighborhood_issues(
+    service: EntityCurationService, store: CandidateStore, entity_name: str, aliases: List[str]
+) -> None:
+    """Interactively resolve blocked relationships."""
+    issues = get_neighborhood_issues(service, entity_name, aliases)
+    if not issues:
+        return
+
+    console.print(
+        f"\n[bold cyan]Found {len(issues)} pending relationship(s) blocked by peers:[/bold cyan]"
+    )
+
+    for issue in issues:
+        console.print(
+            f"\nRelationship: [blue]{issue.relationship_candidate.source}[/blue] --[{issue.relationship_candidate.type}]--> [blue]{issue.relationship_candidate.target}[/blue]"
+        )
+        console.print(f"Peer: [yellow]{issue.peer_name}[/yellow] ({issue.issue_type})")
+
+        if issue.issue_type == "promotable":
+            # Just approve the relationship, the peer is already approved
+            if typer.confirm(f"Promote relationship to approved entity '{issue.peer_name}'?"):
+                service.approve_relationship_candidate(issue.relationship_candidate)
+                console.print("[green]Relationship promoted.[/green]")
+
+        elif issue.issue_type == "resolvable" and issue.peer_candidate_key:
+            if typer.confirm(f"Approve pending candidate '{issue.peer_name}'?"):
+                try:
+                    peer_candidate = _ensure_candidate(store, issue.peer_candidate_key)
+                    service.approve_candidate(peer_candidate)
+                    console.print(
+                        f"[green]Approved peer '{peer_candidate.canonical_name}'.[/green]"
+                    )
+                    # Recursively check new neighborhood
+                    _handle_neighborhood_issues(
+                        service, store, peer_candidate.canonical_name, peer_candidate.aliases
+                    )
+                except Exception as e:
+                    console.print(f"[red]Failed to approve peer: {e}[/red]")
+
+        elif issue.issue_type == "missing":
+            if typer.confirm(f"Create new entity for '{issue.peer_name}'?"):
+                # Simple interactive creation
+                new_type_str = typer.prompt("Entity Type", default="CONCEPT")
+                try:
+                    new_type = EntityType(new_type_str.upper())
+
+                    # Create synthetic candidate
+                    synthetic = EntityCandidate(
+                        candidate_key=issue.peer_name.lower().replace(" ", "_"),
+                        canonical_name=issue.peer_name,
+                        candidate_type=new_type,
+                        status=CandidateStatus.PENDING,
+                        confidence_score=1.0,
+                        description="Created during neighborhood approval",
+                        source_documents=issue.relationship_candidate.source_documents,
+                        chunk_ids=issue.relationship_candidate.chunk_ids,
+                    )
+
+                    # Approve it
+                    service.approve_candidate(synthetic)
+                    console.print(f"[green]Created and approved entity '{issue.peer_name}'.[/green]")
+                    # Recursively check new neighborhood
+                    _handle_neighborhood_issues(
+                        service, store, synthetic.canonical_name, synthetic.aliases
+                    )
+                except ValueError:
+                    console.print(f"[red]Invalid entity type: {new_type_str}[/red]")
+                except Exception as e:
+                    console.print(f"[red]Failed to create entity: {e}[/red]")
 
 
 @app.command("queue")
@@ -288,6 +384,36 @@ def stats(
             console.print("By type:")
             for row in by_type:
                 console.print(f"  {row.get('candidate_type')}: {row.get('count')}")
+
+        # Add Relationship Stats
+        rel_totals: Dict[str, Any] = {}
+        rel_by_type: List[Dict[str, Any]] = []
+        relationship_stats = getattr(store, "relationship_stats", None)
+        if callable(relationship_stats):
+            rel_raw = relationship_stats() or {}
+            rel_totals = rel_raw.get("totals") or {}
+            rel_by_type = rel_raw.get("by_type") or []
+
+        if rel_totals:
+            console.print("\n[bold]Relationship Candidate Stats[/bold]")
+            console.print(
+                "Totals: "
+                + ", ".join(
+                    f"{key}={value}"
+                    for key, value in [
+                        ("total", rel_totals.get("total")),
+                        ("pending", rel_totals.get("pending")),
+                        ("approved", rel_totals.get("approved")),
+                        ("rejected", rel_totals.get("rejected")),
+                    ]
+                    if value is not None
+                )
+            )
+            if rel_by_type:
+                console.print("By type:")
+                for row in rel_by_type:
+                    console.print(f"  {row.get('candidate_type')}: {row.get('count')}")
+
     finally:
         store.close()
 
@@ -297,6 +423,7 @@ def approve(
     query: str = typer.Argument(..., help="Candidate id/key/name to approve."),
     table_path: Path | None = typer.Option(None, help="Override normalization table path."),
     config: Path = typer.Option(Path("config/config.yaml"), help="Path to config file."),
+    recursive: bool = typer.Option(True, help="Check and prompt for blocked relationships."),
 ) -> None:
     """Approve a candidate and promote to production entity."""
     cfg = _load(config)
@@ -306,6 +433,10 @@ def approve(
         candidate = _ensure_candidate(store, query)
         entity_id = service.approve_candidate(candidate)
         console.print(f"[green]Approved {candidate.canonical_name} -> entity {entity_id}[/green]")
+
+        if recursive:
+            _handle_neighborhood_issues(service, store, candidate.canonical_name, candidate.aliases)
+
     finally:
         store.close()
         manager.close()

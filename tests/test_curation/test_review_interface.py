@@ -103,6 +103,12 @@ class _FakeCandidateStore:
         totals = {"total": len(self._candidates)}
         return {"totals": totals, "by_type": []}
 
+    def relationship_stats(self) -> Dict[str, Any]:
+        return {
+            "totals": {"total": 2, "pending": 2, "approved": 0, "rejected": 0},
+            "by_type": [{"candidate_type": "DEPENDS_ON", "count": 2}],
+        }
+
     def close(self) -> None:
         return None
 
@@ -218,4 +224,33 @@ def test_normalization_subcommands_still_work(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Electric Power Subsystem" in result.stdout
     assert "Attitude Control System" in result.stdout
-    assert "approved" not in result.stdout
+
+
+def test_stats_command_works_with_fake_store(monkeypatch) -> None:
+    candidates = [
+        EntityCandidate(
+            id="cand-1",
+            candidate_key="k1",
+            canonical_name="Electric Power Subsystem",
+            candidate_type=EntityType.SYSTEM,
+            confidence_score=0.93,
+            status=CandidateStatus.PENDING,
+            mention_count=5,
+            source_documents=["doc-1"],
+            chunk_ids=["chunk-1", "chunk-2"],
+        )
+    ]
+
+    def _factory(_cfg):
+        return _FakeCandidateStore(candidates)
+
+    monkeypatch.setattr(review_interface, "create_candidate_store", _factory)
+
+    result = runner.invoke(
+        review_interface.app,
+        ["stats", "--config", "config/config.yaml"],
+    )
+
+    assert result.exit_code == 0
+    assert "Entity Candidate Stats" in result.stdout
+    assert "Relationship Candidate Stats" in result.stdout

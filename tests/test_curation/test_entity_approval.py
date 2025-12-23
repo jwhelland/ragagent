@@ -42,7 +42,7 @@ class _FakeManager:
         return True
 
     def get_relationship_candidates_involving_keys(
-        self, keys: List[str], *, status: str = "pending", limit: int = 200
+        self, keys: List[str], *, statuses: List[str] | None = None, limit: int = 200
     ) -> List[Dict[str, Any]]:
         return list(self.relationship_candidate_rows)
 
@@ -162,6 +162,7 @@ def test_approve_candidate_promotes_and_updates_normalization(tmp_path: Path) ->
 
     assert manager.entity_upserts[0]["id"] == entity_id
     assert manager.status_updates[-1] == (candidate.candidate_key, CandidateStatus.APPROVED)
+    assert manager.entity_upserts[0]["properties"]["display_name"] == "Power System"
 
     record = table.lookup(candidate.canonical_name)
     assert record is not None
@@ -198,6 +199,8 @@ def test_merge_candidates_and_undo(tmp_path: Path) -> None:
 
     entity_id = service.merge_candidates(primary, [duplicate])
     assert manager.entity_upserts[0]["id"] == entity_id
+    assert manager.entity_upserts[0]["properties"]["display_name"] == "Power System"
+    assert manager.entity_upserts[0]["properties"]["candidate_key"] == "cand-primary"
     assert manager.status_updates == [
         ("cand-primary", CandidateStatus.APPROVED),
         ("cand-dup", CandidateStatus.REJECTED),

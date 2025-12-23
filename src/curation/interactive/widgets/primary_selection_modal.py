@@ -97,6 +97,12 @@ class PrimarySelectionModal(ModalScreen[Optional[EntityCandidate]]):
         """
         super().__init__()
         self.candidates = candidates
+        self._radio_ids: list[str] = []
+        self._candidate_by_radio_id: dict[str, EntityCandidate] = {}
+        for idx, candidate in enumerate(candidates):
+            radio_id = f"radio-{candidate.id}" if candidate.id is not None else f"radio-idx-{idx}"
+            self._radio_ids.append(radio_id)
+            self._candidate_by_radio_id[radio_id] = candidate
 
         # Auto-select the candidate with highest confidence as default
         self.default_index = 0
@@ -129,7 +135,7 @@ class PrimarySelectionModal(ModalScreen[Optional[EntityCandidate]]):
                             f"[{candidate.confidence_score:.2f}] "
                             f"- {candidate.mention_count} mentions"
                         )
-                        yield RadioButton(label, value=is_default, id=f"radio-{candidate.id}")
+                        yield RadioButton(label, value=is_default, id=self._radio_ids[idx])
 
                         # Full description below radio button (if available)
                         if candidate.description:
@@ -156,18 +162,42 @@ class PrimarySelectionModal(ModalScreen[Optional[EntityCandidate]]):
         except Exception:
             pass
 
+    def _resolve_selected_candidate(self, radioset: RadioSet) -> Optional[EntityCandidate]:
+        pressed_button = getattr(radioset, "pressed_button", None)
+        if pressed_button is not None:
+            candidate = self._candidate_by_radio_id.get(getattr(pressed_button, "id", None))
+            if candidate is not None:
+                return candidate
+
+        radio_buttons = list(radioset.query(RadioButton))
+        for radio_button in radio_buttons:
+            if getattr(radio_button, "value", False):
+                candidate = self._candidate_by_radio_id.get(getattr(radio_button, "id", None))
+                if candidate is not None:
+                    return candidate
+
+        pressed_index = getattr(radioset, "pressed_index", None)
+        if pressed_index is not None and 0 <= pressed_index < len(radio_buttons):
+            candidate = self._candidate_by_radio_id.get(
+                getattr(radio_buttons[pressed_index], "id", None)
+            )
+            if candidate is not None:
+                return candidate
+
+        return None
+
     @on(Button.Pressed, "#select-button")
     def action_select(self) -> None:
         """Handle select button press."""
         try:
             radioset = self.query_one("#candidate-radioset", RadioSet)
-            selected_index = radioset.pressed_index
+            selected = self._resolve_selected_candidate(radioset)
+            if selected is not None:
+                self.dismiss(selected)
+                return
 
-            if selected_index is not None and 0 <= selected_index < len(self.candidates):
-                self.dismiss(self.candidates[selected_index])
-            else:
-                # No selection or invalid, return default
-                self.dismiss(self.candidates[self.default_index] if self.candidates else None)
+            # No selection or invalid, return default
+            self.dismiss(self.candidates[self.default_index] if self.candidates else None)
         except Exception:
             # Fallback to default
             self.dismiss(self.candidates[self.default_index] if self.candidates else None)

@@ -20,7 +20,7 @@ ACTION_BINDINGS = [
     Binding("f", "flag_current", "Flag", show=True, priority=False),
     Binding("u", "undo_last", "Undo", show=True, priority=False),
     Binding("c", "compare_with_duplicate", "Compare", show=True, priority=False),
-    Binding("M", "merge_into_entity", "Merge into Entity", show=True, priority=False),
+    Binding("m", "merge_into_entity", "Merge into Entity", show=True, priority=False),
 ]
 
 # Search and filter bindings

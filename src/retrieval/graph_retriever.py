@@ -118,11 +118,55 @@ class GraphRetriever:
         else:
             self.neo4j = neo4j_manager
 
+        # Cache existing relationship types to avoid Neo4j warnings
+        try:
+            self.existing_relationship_types = set(self.neo4j.get_existing_relationship_types())
+        except Exception as e:
+            logger.warning(f"Failed to fetch existing relationship types: {e}")
+            self.existing_relationship_types = set()
+
         logger.info(
             "Initialized GraphRetriever",
             max_depth=self.graph_config.max_depth,
             relationship_types=len(self.graph_config.relationship_types),
+            existing_types=len(self.existing_relationship_types),
         )
+
+    def _filter_relationship_types(
+        self, relationship_types: List[RelationshipType]
+    ) -> List[RelationshipType]:
+        """Filter relationship types to only those that exist in the database.
+
+        Args:
+            relationship_types: List of desired relationship types
+
+        Returns:
+            List of relationship types that actually exist
+        """
+        if not self.existing_relationship_types:
+            # If we couldn't fetch types (e.g. empty DB), allow all to avoid blocking
+            # But normally this set is populated.
+            # Actually, if the set is empty, it means NO relationships exist, so we should return empty.
+            # However, for safety if the fetch failed, we might want to return original.
+            # But the fetch is wrapped in try/except.
+            # If the DB is truly empty, returning empty list is correct.
+            # If the DB has types but we missed them, returning original risks warnings.
+            # Let's assume if it's empty, it's empty.
+            return []
+
+        filtered = [
+            rt for rt in relationship_types if rt.value in self.existing_relationship_types
+        ]
+        
+        if len(filtered) < len(relationship_types):
+            logger.debug(
+                "Filtered relationship types",
+                original=len(relationship_types),
+                filtered=len(filtered),
+                excluded=[rt.value for rt in relationship_types if rt.value not in self.existing_relationship_types]
+            )
+            
+        return filtered
 
     def retrieve(
         self,
@@ -385,6 +429,10 @@ class GraphRetriever:
             List of shortest paths
         """
         paths: List[GraphPath] = []
+        filtered_types = self._filter_relationship_types(relationship_types)
+
+        if not filtered_types:
+            return []
 
         # Find paths between all pairs of entities
         for i, source in enumerate(resolved_entities):
@@ -393,7 +441,7 @@ class GraphRetriever:
                     source_id=source.entity_id,
                     target_id=target.entity_id,
                     max_depth=max_depth,
-                    relationship_types=relationship_types,
+                    relationship_types=filtered_types,
                 )
 
                 for raw_path in raw_paths:
@@ -424,41 +472,46 @@ class GraphRetriever:
             List of hierarchical paths
         """
         paths: List[GraphPath] = []
+        
+        part_of_rels = self._filter_relationship_types([RelationshipType.PART_OF])
+        contains_rels = self._filter_relationship_types([RelationshipType.CONTAINS])
 
         for entity in resolved_entities:
             # Traverse upward (PART_OF)
-            upward_entities = self.neo4j.traverse_relationships(
-                entity_id=entity.entity_id,
-                relationship_types=[RelationshipType.PART_OF],
-                max_depth=max_depth,
-                direction="outgoing",
-            )
-
-            for related in upward_entities:
-                path = self._create_simple_path(
-                    start_entity_id=entity.entity_id,
-                    end_entity_id=related["id"],
-                    depth=related["depth"],
-                    base_confidence=entity.confidence,
+            if part_of_rels:
+                upward_entities = self.neo4j.traverse_relationships(
+                    entity_id=entity.entity_id,
+                    relationship_types=part_of_rels,
+                    max_depth=max_depth,
+                    direction="outgoing",
                 )
-                paths.append(path)
+
+                for related in upward_entities:
+                    path = self._create_simple_path(
+                        start_entity_id=entity.entity_id,
+                        end_entity_id=related["id"],
+                        depth=related["depth"],
+                        base_confidence=entity.confidence,
+                    )
+                    paths.append(path)
 
             # Traverse downward (CONTAINS)
-            downward_entities = self.neo4j.traverse_relationships(
-                entity_id=entity.entity_id,
-                relationship_types=[RelationshipType.CONTAINS],
-                max_depth=max_depth,
-                direction="outgoing",
-            )
-
-            for related in downward_entities:
-                path = self._create_simple_path(
-                    start_entity_id=entity.entity_id,
-                    end_entity_id=related["id"],
-                    depth=related["depth"],
-                    base_confidence=entity.confidence,
+            if contains_rels:
+                downward_entities = self.neo4j.traverse_relationships(
+                    entity_id=entity.entity_id,
+                    relationship_types=contains_rels,
+                    max_depth=max_depth,
+                    direction="outgoing",
                 )
-                paths.append(path)
+
+                for related in downward_entities:
+                    path = self._create_simple_path(
+                        start_entity_id=entity.entity_id,
+                        end_entity_id=related["id"],
+                        depth=related["depth"],
+                        base_confidence=entity.confidence,
+                    )
+                    paths.append(path)
 
         # Sort by score
         paths.sort(key=lambda p: p.score, reverse=True)
@@ -478,12 +531,16 @@ class GraphRetriever:
             List of sequential paths
         """
         paths: List[GraphPath] = []
+        precedes_rels = self._filter_relationship_types([RelationshipType.PRECEDES])
+
+        if not precedes_rels:
+            return []
 
         for entity in resolved_entities:
             # Follow PRECEDES chains (forward)
             forward_entities = self.neo4j.traverse_relationships(
                 entity_id=entity.entity_id,
-                relationship_types=[RelationshipType.PRECEDES],
+                relationship_types=precedes_rels,
                 max_depth=max_depth,
                 direction="outgoing",
             )
@@ -500,7 +557,7 @@ class GraphRetriever:
             # Follow PRECEDES chains (backward)
             backward_entities = self.neo4j.traverse_relationships(
                 entity_id=entity.entity_id,
-                relationship_types=[RelationshipType.PRECEDES],
+                relationship_types=precedes_rels,
                 max_depth=max_depth,
                 direction="incoming",
             )
@@ -538,11 +595,15 @@ class GraphRetriever:
             RelationshipType.REQUIRES_CHECK,
             RelationshipType.PRECEDES,
         ]
+        filtered_rels = self._filter_relationship_types(procedural_rels)
+
+        if not filtered_rels:
+            return []
 
         for entity in resolved_entities:
             related_entities = self.neo4j.traverse_relationships(
                 entity_id=entity.entity_id,
-                relationship_types=procedural_rels,
+                relationship_types=filtered_rels,
                 max_depth=max_depth,
                 direction="both",
             )
@@ -578,11 +639,15 @@ class GraphRetriever:
             List of multi-hop paths
         """
         paths: List[GraphPath] = []
+        filtered_types = self._filter_relationship_types(relationship_types)
+
+        if not filtered_types:
+            return []
 
         for entity in resolved_entities:
             related_entities = self.neo4j.traverse_relationships(
                 entity_id=entity.entity_id,
-                relationship_types=relationship_types,
+                relationship_types=filtered_types,
                 max_depth=max_depth,
                 direction="both",
             )

@@ -1,6 +1,6 @@
 """Scrollable list widget for displaying entity candidates."""
 
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -10,7 +10,7 @@ from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Static
 
-from src.storage.schemas import EntityCandidate
+from src.storage.schemas import EntityCandidate, RelationshipCandidate
 
 
 class CandidateRow(Static):
@@ -18,7 +18,7 @@ class CandidateRow(Static):
 
     def __init__(
         self,
-        candidate: EntityCandidate,
+        candidate: Union[EntityCandidate, RelationshipCandidate],
         index: int,
         is_selected: bool = False,
         is_checked: bool = False,
@@ -26,7 +26,7 @@ class CandidateRow(Static):
         """Initialize candidate row.
 
         Args:
-            candidate: The entity candidate to display
+            candidate: The entity or relationship candidate to display
             index: Row index in the list
             is_selected: Whether this row is currently selected (navigation cursor)
             is_checked: Whether this row is checked for batch operations
@@ -67,15 +67,33 @@ class CandidateRow(Static):
         # Index
         text.append(f"[{self.index + 1:>3}] ", style="dim")
 
-        # Name (truncate if too long)
-        name = self.candidate.canonical_name
-        if len(name) > 35:
-            name = name[:32] + "..."
-        text.append(f"{name:<35} ", style="bold" if self.is_selected else "")
+        if isinstance(self.candidate, EntityCandidate):
+            # Name (truncate if too long)
+            name = self.candidate.canonical_name
+            if len(name) > 35:
+                name = name[:32] + "..."
+            text.append(f"{name:<35} ", style="bold" if self.is_selected else "")
 
-        # Type
-        type_str = f"{self.candidate.candidate_type.value:<12}"
-        text.append(type_str, style="cyan")
+            # Type
+            type_str = f"{self.candidate.candidate_type.value:<12}"
+            text.append(type_str, style="cyan")
+        else:
+            # Relationship display: source -> [type] -> target
+            # Compact format: "Source -> Target" with type in brackets or color
+            source = self.candidate.source
+            target = self.candidate.target
+            rel_type = self.candidate.type
+            
+            # Truncate source/target if needed
+            if len(source) > 15: source = source[:13] + ".."
+            if len(target) > 15: target = target[:13] + ".."
+            
+            rel_str = f"{source} -> {target}"
+            text.append(f"{rel_str:<35} ", style="bold" if self.is_selected else "")
+            
+            # Type (shortened)
+            if len(rel_type) > 12: rel_type = rel_type[:12]
+            text.append(f"{rel_type:<12}", style="magenta")
 
         # Confidence
         text.append(f" {conf:.2f} ", style=f"bold {conf_color}")
@@ -111,7 +129,7 @@ class CandidateRow(Static):
 
 
 class CandidateList(Widget):
-    """Scrollable list of entity candidates with keyboard navigation."""
+    """Scrollable list of entity/relationship candidates with keyboard navigation."""
 
     # Make widget focusable for keyboard input
     can_focus = True
@@ -126,11 +144,11 @@ class CandidateList(Widget):
     ]
 
     # Reactive attributes
-    candidates: reactive[List[EntityCandidate]] = reactive([], recompose=True)
+    candidates: reactive[List[Union[EntityCandidate, RelationshipCandidate]]] = reactive([], recompose=True)
     current_index: reactive[int] = reactive(0)
     selected_ids: set[str] = set()  # IDs of candidates selected for batch operations
 
-    def __init__(self, candidates: Optional[List[EntityCandidate]] = None) -> None:
+    def __init__(self, candidates: Optional[List[Union[EntityCandidate, RelationshipCandidate]]] = None) -> None:
         """Initialize candidate list.
 
         Args:
@@ -182,7 +200,7 @@ class CandidateList(Widget):
             # No app context (e.g., during testing)
             pass
 
-    def watch_candidates(self, old: List[EntityCandidate], new: List[EntityCandidate]) -> None:
+    def watch_candidates(self, old: List[Union[EntityCandidate, RelationshipCandidate]], new: List[Union[EntityCandidate, RelationshipCandidate]]) -> None:
         """React to candidates list changes by recomposing.
 
         Args:
@@ -193,7 +211,7 @@ class CandidateList(Widget):
         pass
 
     @property
-    def current_candidate(self) -> Optional[EntityCandidate]:
+    def current_candidate(self) -> Optional[Union[EntityCandidate, RelationshipCandidate]]:
         """Get the currently selected candidate."""
         if 0 <= self.current_index < len(self.candidates):
             return self.candidates[self.current_index]
@@ -227,7 +245,7 @@ class CandidateList(Widget):
         if self.candidates:
             self.current_index = len(self.candidates) - 1
 
-    def refresh_candidates(self, candidates: List[EntityCandidate]) -> None:
+    def refresh_candidates(self, candidates: List[Union[EntityCandidate, RelationshipCandidate]]) -> None:
         """Refresh the candidate list with new data.
 
         Args:
