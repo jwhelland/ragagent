@@ -26,6 +26,8 @@ from src.curation.interactive.widgets import (
     DetailPanel,
     DuplicateSuggestionsPanel,
     EditModalScreen,
+    EntityCandidateMergePreviewModal,
+    EntitySearchModal,
     MergePreviewModal,
     PrimarySelectionModal,
     SearchFilters,
