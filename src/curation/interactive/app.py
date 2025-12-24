@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.widgets import Footer, Header, Static
@@ -27,9 +26,11 @@ from src.curation.interactive.widgets import (
     BatchOperationModal,
     CandidateList,
     CommandModalScreen,
+    CommandPalette,
     ComparisonModalScreen,
     ContextPanel,
     DetailPanel,
+    DuplicateSuggestionsPanel,
     EditModalScreen,
     EntityCandidateMergePreviewModal,
     EntitySearchModal,
@@ -47,7 +48,6 @@ from src.storage.schemas import (
     CandidateStatus,
     EntityCandidate,
     EntityType,
-    RelationshipCandidate,
 )
 from src.utils.config import Config, load_config
 
@@ -687,20 +687,43 @@ class ReviewApp(App):
 
         try:
             count = 0
+
+            # Deduplicate actions to prevent race conditions (e.g. creating same peer multiple times)
+            processed_relationship_keys = set()
+            processed_peer_candidate_keys = set()
+            processed_created_peer_names = set()
+
             for issue in issues:
+                rc_key = issue.relationship_candidate.candidate_key
+
+                # 1. Promote Relationship
                 if issue.issue_type == "promotable":
+                    if rc_key in processed_relationship_keys:
+                        continue
                     service.approve_relationship_candidate(issue.relationship_candidate)
+                    processed_relationship_keys.add(rc_key)
                     count += 1
 
+                # 2. Approve Pending Peer Candidate
                 elif issue.issue_type == "resolvable" and issue.peer_candidate_key:
+                    if issue.peer_candidate_key in processed_peer_candidate_keys:
+                        continue
+
                     cand_dict = service.manager.get_entity_candidate(issue.peer_candidate_key)
                     if cand_dict:
                         peer_cand = EntityCandidate.model_validate(cand_dict)
                         service.approve_candidate(peer_cand)
                         # Note: Not recursing in the TUI (keep it one-level deep).
+                        processed_peer_candidate_keys.add(issue.peer_candidate_key)
                         count += 1
 
+                # 3. Create Missing Peer Entity
                 elif issue.issue_type == "missing":
+                    # Deduplicate by name (case-insensitive)
+                    peer_name_lower = issue.peer_name.strip().lower()
+                    if peer_name_lower in processed_created_peer_names:
+                        continue
+
                     # For TUI, default to CONCEPT for new peer entities.
                     service.create_entity(
                         issue.peer_name,
@@ -709,6 +732,7 @@ class ReviewApp(App):
                         source_documents=issue.relationship_candidate.source_documents,
                         chunk_ids=issue.relationship_candidate.chunk_ids,
                     )
+                    processed_created_peer_names.add(peer_name_lower)
                     count += 1
 
             def on_finish():
