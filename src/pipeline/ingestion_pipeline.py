@@ -465,6 +465,10 @@ class IngestionPipeline:
                 logger.debug("Step 4c: Extracting relationships with LLM")
                 llm_relationships_created = self._extract_llm_relationships(llm_extraction_chunks, llm_progress)
 
+                # Step 4c.1: Propagate entities to child chunks
+                # This ensures that L4 paragraphs inherit entities found in their L2/L3 parent sections
+                self._propagate_llm_entities(chunks)
+
             # Step 4c.2: Extract rule-based relationships (Pattern + Dependency)
             logger.debug("Step 4c.2: Extracting rule-based relationships")
             rule_based_relationships_created = self._extract_rule_based_relationships(chunks, progress)
@@ -1489,6 +1493,94 @@ class IngestionPipeline:
         if progress and not chunks:
             progress.update("llm_relationships")
         return total
+
+    def _propagate_llm_entities(self, chunks: List[Any]) -> int:
+        """Propagate extracted LLM entities from parent chunks to their children.
+
+        When entities are extracted from Level 2/3 chunks, they should also be
+        associated with the specific Level 4 (Paragraph) chunks where they are
+        mentioned. This ensures vector retrieval on L4 chunks can still link
+        back to the entities.
+
+        Args:
+            chunks: List of all chunks
+
+        Returns:
+            Number of propagated entity mentions
+        """
+        propagated_count = 0
+        chunk_map = {getattr(c, "chunk_id", None): c for c in chunks}
+
+        # Identify parent chunks (L2/L3) that have extracted entities
+        for parent in chunks:
+            parent_id = getattr(parent, "chunk_id", None)
+            child_ids = getattr(parent, "child_chunk_ids", []) or []
+            if not child_ids:
+                continue
+
+            # Get source entities from this parent
+            source_entities = self._llm_entities_by_chunk.get(parent_id, [])
+            if not source_entities:
+                continue
+
+            # Check each child for mentions
+            for child_id in child_ids:
+                child = chunk_map.get(child_id)
+                if not child:
+                    continue
+
+                content = getattr(child, "content", "").lower()
+                child_metadata = getattr(child, "metadata", {}) or {}
+
+                # Ensure child has a list for new entities
+                if "llm_entities" not in child_metadata:
+                    child_metadata["llm_entities"] = []
+                    # If this child had no LLM extraction done (typical for L4 now),
+                    # we need to initialize its entry in the cache too.
+                    if child_id not in self._llm_entities_by_chunk:
+                        self._llm_entities_by_chunk[child_id] = []
+
+                # Find entities mentioned in this child
+                for ent in source_entities:
+                    # Check name
+                    name_match = str(ent.name).lower() in content
+
+                    # Check aliases
+                    alias_match = False
+                    for alias in ent.aliases:
+                        if str(alias).lower() in content:
+                            alias_match = True
+                            break
+
+                    if name_match or alias_match:
+                        # Propagate this entity to the child
+                        propagated_entity = ent.model_copy()
+                        propagated_entity.chunk_id = child_id
+                        # Note: We keep the original confidence score.
+
+                        # Add to pipeline cache
+                        self._llm_entities_by_chunk[child_id].append(propagated_entity)
+
+                        # Add to chunk metadata
+                        child_metadata["llm_entities"].append({
+                            "name": ent.name,
+                            "type": ent.type,
+                            "description": ent.description,
+                            "aliases": ent.aliases,
+                            "confidence": ent.confidence,
+                            "source": ent.source,
+                            "chunk_id": child_id,
+                            "document_id": ent.document_id,
+                            "propagated_from": parent_id
+                        })
+                        propagated_count += 1
+
+                child.metadata = child_metadata
+
+        if propagated_count > 0:
+            logger.debug(f"Propagated {propagated_count} entity mentions to child chunks")
+
+        return propagated_count
 
     def _merge_entities(self, chunks: List[Any]) -> int:
         """Merge spaCy and LLM entities into unified candidates."""
