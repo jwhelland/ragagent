@@ -98,11 +98,18 @@ relationship_extraction:
     Relationship types (choose only these):
     - PART_OF: target is a parent of source
     - CONTAINS: source includes target as a part or module
+    - IS_A: source is a specific instance or subtype of target
     - DEPENDS_ON: source functionally relies on target
     - CONTROLS: source commands or actuates target
     - MONITORS: source observes or measures target
+    - PROVIDES: source supplies a resource or capability to target
     - PROVIDES_POWER_TO: source supplies electrical power to target
     - SENDS_DATA_TO: source transmits data/telemetry to target
+    - SUPPORTS: source physically or functionally supports target
+    - REQUIRES: source needs target to function
+    - CONNECTS_TO: source is physically or logically linked to target
+    - TRIGGERS: source initiates an action or state in target
+    - CAUSES: source directly results in target event/state
     - REFERENCES: source cites or mentions target
     - PRECEDES: source step occurs before target step
     - REQUIRES_CHECK: source requires verification of target
@@ -111,6 +118,7 @@ relationship_extraction:
     - SIMILAR_TO: source is similar to target
     - CAUSED_BY: source is caused by target
     - MITIGATED_BY: source is mitigated by target
+    - RELATED_TO: source has a generic relation to target
     - REFERENCES_TABLE / REFERENCES_FIGURE: source points to a table/figure
     - DEFINED_IN_TABLE / SHOWN_IN_FIGURE: target defines or shows source
     - CONTAINS_TABLE / CONTAINS_FIGURE: source section contains the table/figure
@@ -246,11 +254,18 @@ output_schemas:
               enum:
                 - PART_OF
                 - CONTAINS
+                - IS_A
                 - DEPENDS_ON
                 - CONTROLS
                 - MONITORS
+                - PROVIDES
                 - PROVIDES_POWER_TO
                 - SENDS_DATA_TO
+                - SUPPORTS
+                - REQUIRES
+                - CONNECTS_TO
+                - TRIGGERS
+                - CAUSES
                 - REFERENCES
                 - PRECEDES
                 - REQUIRES_CHECK
@@ -259,6 +274,7 @@ output_schemas:
                 - SIMILAR_TO
                 - CAUSED_BY
                 - MITIGATED_BY
+                - RELATED_TO
                 - REFERENCES_TABLE
                 - REFERENCES_FIGURE
                 - DEFINED_IN_TABLE

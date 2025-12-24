@@ -43,7 +43,7 @@ ingestion:
     min_chunk_size: 100
 
 extraction:
-  enable_llm: false
+  enable_llm: true
   llm_prompt_template: "config/extraction_prompts.yaml"
   spacy:
     model: "en_core_web_lg"
