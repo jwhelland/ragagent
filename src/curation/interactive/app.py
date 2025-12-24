@@ -1048,15 +1048,14 @@ class ReviewApp(App):
                 self.selection_mode = False
 
                 # Check for neighborhood issues
-                msg = f"✓ Merged {len(all_candidates)} candidates into: {primary.canonical_name}"
+                msg = f"✓ Merged {len(all_candidates)} candidates into APPROVED entity: {primary.canonical_name}"
                 try:
                     # Get issues for the newly created entity (we use the primary's name/aliases as proxy)
                     merged_entity_id = result.merged_entities[0] if result.merged_entities else None
 
                     if merged_entity_id:
                         # Scan neighborhood
-                        self.call_from_thread(
-                            self.notify,
+                        self.notify(
                             "Scanning neighborhood for connections...",
                             timeout=2,
                         )
@@ -1065,8 +1064,7 @@ class ReviewApp(App):
                         )
 
                         if issues:
-                            self.call_from_thread(
-                                self._handle_entity_approved_ui,
+                            self._handle_entity_approved_ui(
                                 msg,
                                 issues,
                             )
@@ -1087,7 +1085,6 @@ class ReviewApp(App):
                 )
 
             self.call_from_thread(on_success)
-
         except Exception as e:
             self.call_from_thread(
                 self.notify, f"✗ Error in merge: {e}", severity="error", markup=False
@@ -1206,15 +1203,12 @@ class ReviewApp(App):
 
                 def on_success() -> None:
                     self.session_tracker.record_merge()
-                    entity_name = entity_data.get('canonical_name', 'entity')
-                    msg = f"✓ Merged into entity: {entity_name}"
+                    entity_name = entity_data.get("canonical_name", "entity")
+                    msg = f"✓ Merged into APPROVED entity: {entity_name}"
 
                     try:
                         # Check neighborhood for the target entity
-                        # We need the entity's aliases. Since we don't have the full object here easily,
-                        # we rely on the candidate's name/aliases which were just added to it.
-                        self.call_from_thread(
-                            self.notify,
+                        self.notify(
                             "Scanning neighborhood for connections...",
                             timeout=2,
                         )
@@ -1223,16 +1217,19 @@ class ReviewApp(App):
                             service, candidate.canonical_name, candidate.aliases
                         )
                         # Also check the target entity name itself
-                        issues.extend(get_neighborhood_issues(
-                            service, entity_name, []
-                        ))
-
-                        self.call_from_thread(
-                            self._handle_entity_approved_ui,
-                            msg,
-                            issues,
+                        issues.extend(
+                            get_neighborhood_issues(service, entity_name, [])
                         )
-                        return
+
+                        if issues:
+                            self._handle_entity_approved_ui(
+                                msg,
+                                issues,
+                            )
+                            return
+                        else:
+                            logger.info(f"No neighborhood issues found for merged entity {entity_name}")
+
                     except Exception as e:
                         logger.error(f"Failed to check neighborhood issues after merge-into: {e}")
 
