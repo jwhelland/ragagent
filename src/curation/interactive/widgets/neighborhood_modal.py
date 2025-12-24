@@ -85,28 +85,52 @@ class NeighborhoodResolutionModal(ModalScreen[List[NeighborhoodIssue]]):
 
     def __init__(self, issues: List[NeighborhoodIssue]) -> None:
         super().__init__()
-        self.issues = issues
+        self.all_issues = issues
         self.checkboxes: List[Checkbox] = []
+
+        # Group issues by signature to deduplicate UI
+        self.grouped_issues = {}
+        for issue in issues:
+            # Signature: "source --[TYPE]--> target" + issue_type + peer_name
+            # This ensures visually identical rows are grouped
+            sig = (
+                f"{issue.relationship_candidate.source} "
+                f"--[{issue.relationship_candidate.type}]--> "
+                f"{issue.relationship_candidate.target} "
+                f"({issue.issue_type}:{issue.peer_name})"
+            )
+            if sig not in self.grouped_issues:
+                self.grouped_issues[sig] = []
+            self.grouped_issues[sig].append(issue)
+
+        self.display_order = list(self.grouped_issues.keys())
 
     def compose(self) -> ComposeResult:
         with Container(id="resolution-dialog"):
             yield Label("Neighborhood Resolution", id="dialog-title")
 
             yield Static(
-                f"Found {len(self.issues)} pending relationships blocked by peer entities.\n"
+                f"Found {len(self.all_issues)} pending relationships blocked by peer entities.\n"
                 "Select actions to resolve them:",
                 id="summary"
             )
 
             with VerticalScroll(id="issue-list"):
-                for idx, issue in enumerate(self.issues):
+                for idx, sig in enumerate(self.display_order):
+                    issues = self.grouped_issues[sig]
+                    representative = issues[0] # Use first one for display logic
+                    count = len(issues)
+
                     action_text = ""
-                    if issue.issue_type == "promotable":
-                        action_text = f"Promote relationship to approved '{issue.peer_name}'"
-                    elif issue.issue_type == "resolvable":
-                        action_text = f"Approve pending candidate '{issue.peer_name}'"
-                    elif issue.issue_type == "missing":
-                        action_text = f"Create new entity '{issue.peer_name}' (as CONCEPT)"
+                    if representative.issue_type == "promotable":
+                        action_text = f"Promote relationship to approved '{representative.peer_name}'"
+                    elif representative.issue_type == "resolvable":
+                        action_text = f"Approve pending candidate '{representative.peer_name}'"
+                    elif representative.issue_type == "missing":
+                        action_text = f"Create new entity '{representative.peer_name}' (as CONCEPT)"
+
+                    if count > 1:
+                        action_text += f" ({count} occurrences)"
 
                     # Default to checked
                     cb = Checkbox(action_text, value=True, id=f"cb-{idx}")
@@ -114,7 +138,7 @@ class NeighborhoodResolutionModal(ModalScreen[List[NeighborhoodIssue]]):
 
                     with Container(classes="issue-row"):
                         yield cb
-                        rel_desc = f"{issue.relationship_candidate.source} --[{issue.relationship_candidate.type}]--> {issue.relationship_candidate.target}"
+                        rel_desc = f"{representative.relationship_candidate.source} --[{representative.relationship_candidate.type}]--> {representative.relationship_candidate.target}"
                         yield Static(rel_desc, classes="issue-description")
 
             with Container(id="button-container"):
@@ -127,7 +151,9 @@ class NeighborhoodResolutionModal(ModalScreen[List[NeighborhoodIssue]]):
         selected_issues = []
         for idx, cb in enumerate(self.checkboxes):
             if cb.value:
-                selected_issues.append(self.issues[idx])
+                # Add all issues associated with this group
+                sig = self.display_order[idx]
+                selected_issues.extend(self.grouped_issues[sig])
         self.dismiss(selected_issues)
 
     @on(Button.Pressed, "#cancel-button")
