@@ -37,28 +37,31 @@ class CooccurrenceRelationshipExtractor:
             else:
                 # Assume ExtractedEntity or similar object with name/text/canonical_name
                 name = str(getattr(ent, "name", None) or getattr(ent, "text", None) or getattr(ent, "canonical_name", ""))
-            
+
             if name.strip():
                 entity_names.add(name.strip())
 
         # combinatorial explosion protection: if too many entities, they probably aren't all "related"
-        # e.g. a list of parts. 8 entities = 28 pairs. 
+        # e.g. a list of parts. 8 entities = 28 pairs.
         if len(entity_names) < 2 or len(entity_names) > 8:
             return []
 
         relationships: List[ExtractedRelationship] = []
-        
+
         # Create a relationship for every unique pair (undirected, so we just do one way)
         # We sort to ensure deterministic pairs
         sorted_names = sorted(list(entity_names))
-        
+
         for source, target in combinations(sorted_names, 2):
+            if source.lower() == target.lower():
+                continue
+
             relationships.append(
                 ExtractedRelationship(
                     source=source,
                     target=target,
                     type="RELATED_TO",
-                    description=f"Extracted via chunk co-occurrence",
+                    description="Extracted via chunk co-occurrence",
                     confidence=self.confidence,
                     bidirectional=True,
                     chunk_id=chunk_id,
