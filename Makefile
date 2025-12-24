@@ -68,6 +68,9 @@ review: ## Launch non-interactive review CLI
 backfill-relationships: ## Promote RelationshipCandidates into graph edges
 	$(UV) run --offline python scripts/backfill_relationships.py
 
+cleanup-relationships: ## Bulk promote/reject pending relationships (see scripts/cleanup_relationships.py)
+	$(UV) run --offline python scripts/cleanup_relationships.py --help
+
 clean-normalization: ## Delete normalization table JSON (recommended when resetting Neo4j)
 	rm -f "$(NORM_TABLE)"
 

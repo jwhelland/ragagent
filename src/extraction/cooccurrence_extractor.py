@@ -41,7 +41,9 @@ class CooccurrenceRelationshipExtractor:
             if name.strip():
                 entity_names.add(name.strip())
 
-        if len(entity_names) < 2:
+        # combinatorial explosion protection: if too many entities, they probably aren't all "related"
+        # e.g. a list of parts. 8 entities = 28 pairs. 
+        if len(entity_names) < 2 or len(entity_names) > 8:
             return []
 
         relationships: List[ExtractedRelationship] = []
