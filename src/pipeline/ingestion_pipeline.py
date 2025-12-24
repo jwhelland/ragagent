@@ -434,6 +434,10 @@ class IngestionPipeline:
             llm_entities_created = 0
             llm_relationships_created = 0
 
+            # Filter chunks for LLM extraction (Sections/Subsections vs Paragraphs)
+            llm_extraction_chunks = self._get_extraction_chunks(chunks)
+            llm_progress = ExtractionProgress(len(llm_extraction_chunks))
+
             can_parallelize = (
                 self.spacy_extractor is not None
                 and self.llm_extractor is not None
@@ -442,7 +446,7 @@ class IngestionPipeline:
             if can_parallelize:
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     spacy_future = executor.submit(self._extract_spacy_entities, chunks, progress)
-                    llm_future = executor.submit(self._extract_llm_entities, chunks, progress)
+                    llm_future = executor.submit(self._extract_llm_entities, llm_extraction_chunks, llm_progress)
                     spacy_entities_created = spacy_future.result()
                     llm_entities_created = llm_future.result()
             else:
@@ -455,11 +459,11 @@ class IngestionPipeline:
                         )
                     else:
                         logger.debug("Step 4b: Extracting entities with LLM")
-                        llm_entities_created = self._extract_llm_entities(chunks, progress)
+                        llm_entities_created = self._extract_llm_entities(llm_extraction_chunks, llm_progress)
 
             if self.config.extraction.enable_llm and self.llm_extractor:
                 logger.debug("Step 4c: Extracting relationships with LLM")
-                llm_relationships_created = self._extract_llm_relationships(chunks, progress)
+                llm_relationships_created = self._extract_llm_relationships(llm_extraction_chunks, llm_progress)
 
             # Step 4c.2: Extract rule-based relationships (Pattern + Dependency)
             logger.debug("Step 4c.2: Extracting rule-based relationships")
@@ -931,6 +935,42 @@ class IngestionPipeline:
             chunk.metadata["merged_entities"] = new_merged
 
         return merges_count
+
+    def _get_extraction_chunks(self, chunks: List[Any]) -> List[Any]:
+        """Determine the optimal set of chunks for LLM extraction.
+
+        Prefers Level 2 (Sections) or Level 3 (Subsections) to provide better
+        context. Falls back to Level 4 (Paragraphs) if no structural chunks exist
+        (e.g., for unstructured text files).
+
+        Args:
+            chunks: List of all hierarchical chunks
+
+        Returns:
+            List of chunks to be used for LLM extraction
+        """
+        # 1. Try Level 3 (Subsections) - Good balance of context and size
+        l3_chunks = [c for c in chunks if getattr(c, "level", 0) == 3]
+        if l3_chunks:
+            logger.debug(f"Using {len(l3_chunks)} Level 3 chunks for LLM extraction")
+            return l3_chunks
+
+        # 2. Try Level 2 (Sections) - If no subsections exist
+        l2_chunks = [c for c in chunks if getattr(c, "level", 0) == 2]
+        if l2_chunks:
+            logger.debug(f"Using {len(l2_chunks)} Level 2 chunks for LLM extraction")
+            return l2_chunks
+
+        # 3. Fallback to Level 4 (Paragraphs) - For unstructured docs
+        l4_chunks = [c for c in chunks if getattr(c, "level", 0) == 4]
+        if l4_chunks:
+            logger.debug(f"Using {len(l4_chunks)} Level 4 chunks for LLM extraction (fallback)")
+            return l4_chunks
+
+        # 4. Final fallback to Level 1 (Document) if it's a very small file
+        l1_chunks = [c for c in chunks if getattr(c, "level", 0) == 1]
+        logger.debug(f"Using {len(l1_chunks)} Level 1 chunks for LLM extraction (final fallback)")
+        return l1_chunks
 
     def process_batch(
         self, pdf_paths: List[Path | str], *, force_reingest: bool = False
