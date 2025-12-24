@@ -218,12 +218,12 @@ This is the master task tracking document for the Graph RAG system implementatio
 - [x] **6.8** Final Integration and Testing ⚠️ CRITICAL
 - [ ] **6.9** UI Polish: Flagging System Implementation (Schema + UI)
 - [ ] **6.10** UI Polish: Sort Command Implementation
-- [ ] **6.11** TUI/Workflow Simplification (Full implementation)
-  - [ ] **6.11.1** Remove relationship review “mode” (relationships become contextual neighborhood tasks)
-  - [ ] **6.11.2** Implement single command palette (unify search/filter/actions/entity lookup)
-  - [ ] **6.11.3** Add persistent neighborhood panel with inline resolution actions
-  - [ ] **6.11.4** Simplify merge UX (one merge entry point + always-preview semantics)
-  - [ ] **6.11.5** Add config flag + rollout path, then remove deprecated modals
+- [x] **6.11** TUI/Workflow Simplification (Full implementation)
+  - [x] **6.11.1** Remove relationship review “mode” (relationships become contextual neighborhood tasks)
+  - [x] **6.11.2** Implement single command palette (unify search/filter/actions/entity lookup)
+  - [x] **6.11.3** Add persistent neighborhood panel with inline resolution actions
+  - [x] **6.11.4** Simplify merge UX (one merge entry point + always-preview semantics)
+  - [x] **6.11.5** Add config flag + rollout path, then remove deprecated modals
 
 **Reference Plan:** [`tui-workflow-simplification-plan.md`](tui-workflow-simplification-plan.md)
 - [ ] **6.11** UI Polish: Export Command Implementation
