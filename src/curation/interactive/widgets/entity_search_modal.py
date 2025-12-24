@@ -6,12 +6,12 @@ from loguru import logger
 from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.containers import Container, Horizontal
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, ListItem, ListView, Select, Static
+from textual.widgets import Button, Input, Label, ListItem, ListView, Select
 
 from src.storage.neo4j_manager import Neo4jManager
-from src.storage.schemas import EntityType, EntityStatus
+from src.storage.schemas import EntityStatus, EntityType
 from src.utils.config import Config
 
 
@@ -22,11 +22,11 @@ class EntityResultItem(ListItem):
         super().__init__()
         self.entity_data = entity_data
         self.entity_id = entity_data.get("id")
-        self.name = entity_data.get("canonical_name", "Unknown")
-        self.type = entity_data.get("entity_type", "CONCEPT")
+        self.entity_name = entity_data.get("canonical_name", "Unknown")
+        self.entity_type = entity_data.get("entity_type", "CONCEPT")
 
     def compose(self) -> ComposeResult:
-        yield Label(f"[bold]{self.name}[/bold] ({self.type})")
+        yield Label(f"[bold]{self.entity_name}[/bold] ({self.entity_type})")
         if self.entity_data.get("description"):
             yield Label(f"[italic]{self.entity_data.get('description')[:80]}...[/italic]", classes="result-desc")
 
@@ -88,7 +88,7 @@ class EntitySearchModal(ModalScreen[Optional[Dict[str, Any]]]):
     def compose(self) -> ComposeResult:
         with Container(id="search-container"):
             yield Label("Search Existing Entities", id="search-title")
-            
+
             with Horizontal():
                 yield Input(
                     value=self.initial_query,
@@ -124,7 +124,7 @@ class EntitySearchModal(ModalScreen[Optional[Dict[str, Any]]]):
     @work(thread=True)
     def perform_search(self, query: str) -> None:
         type_filter = self.query_one("#type-filter", Select).value
-        
+
         try:
             results = self.neo4j_manager.search_entities(
                 query=query,
