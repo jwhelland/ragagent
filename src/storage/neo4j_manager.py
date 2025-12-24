@@ -1083,9 +1083,10 @@ class Neo4jManager:
                 """
 
             if status:
-                query += """
-                WHERE n.status = $status
-                """
+                if entity_type:
+                    query += " WHERE n.status = $status"
+                else:
+                    query += " AND n.status = $status"
 
             query += """
             RETURN n
