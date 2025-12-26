@@ -147,7 +147,12 @@ class QueryInterface:
             is_complex = self.query_parser.analyze_complexity(parsed_query)
             if is_complex:
                 use_deep = True
+                logger.info(f"Auto-mode: Complex query detected, switching to Deep Research. Query: {query_text}")
                 console.print("[dim italic]Auto-switching to Deep Research Mode due to query complexity[/dim italic]")
+            else:
+                logger.info(f"Auto-mode: Simple query detected, using Standard Retrieval. Query: {query_text}")
+                if self.verbose:
+                    console.print("[dim italic]Auto-mode: Using Standard Retrieval for simple query[/dim italic]")
 
         if use_deep and self.research_agent:
             # Deep Research Path
