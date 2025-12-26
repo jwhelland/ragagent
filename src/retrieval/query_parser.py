@@ -804,6 +804,47 @@ class QueryParser:
             metadata=data.get("metadata", {}),
         )
 
+    def analyze_complexity(self, parsed_query: ParsedQuery) -> bool:
+        """Analyze query complexity to determine if deep research is needed.
+
+        Heuristic-based complexity analysis:
+        - Deep research favored for HYBRID or PROCEDURAL intents
+        - Queries with multiple relationship types
+        - Queries explicitly asking for "comprehensive", "detailed", "comparison", "analysis"
+        - Long queries (> 15 words)
+
+        Args:
+            parsed_query: ParsedQuery object
+
+        Returns:
+            True if deep research is recommended
+        """
+        # 1. Intent Check
+        if parsed_query.intent in {QueryIntent.HYBRID, QueryIntent.PROCEDURAL}:
+            return True
+
+        # 2. Keyword Check
+        complexity_keywords = {
+            "comprehensive", "detailed", "analyze", "analysis", 
+            "compare", "comparison", "relationship between", 
+            "impact of", "effect of", "trace", "history of"
+        }
+        query_lower = parsed_query.original_text.lower()
+        if any(kw in query_lower for kw in complexity_keywords):
+            return True
+
+        # 3. Relationship Complexity
+        # If looking for multiple types of relationships, it's likely complex
+        if len(parsed_query.relationship_types) > 1:
+            return True
+
+        # 4. Length heuristic (multi-clause questions often longer)
+        word_count = len(parsed_query.original_text.split())
+        if word_count > 15:
+            return True
+
+        return False
+
     def validate_query(self, parsed: ParsedQuery) -> Tuple[bool, Optional[str]]:
         """Validate parsed query.
 

@@ -39,15 +39,17 @@ console = Console()
 class QueryInterface:
     """Interactive CLI for querying the system."""
 
-    def __init__(self, verbose: bool = False, use_deep_mode: bool = False):
+    def __init__(self, verbose: bool = False, use_deep_mode: bool = False, auto_mode: bool = False):
         """Initialize query interface.
 
         Args:
             verbose: Whether to show detailed retrieval info
             use_deep_mode: Whether to use Deep Research Mode
+            auto_mode: Whether to automatically determine mode
         """
         self.verbose = verbose
         self.use_deep_mode = use_deep_mode
+        self.auto_mode = auto_mode
         self.config = Config.from_yaml()
 
         # Configure logging
@@ -71,11 +73,12 @@ class QueryInterface:
             chat_model = self.config.llm.resolve("chat").model
             console.print(f"[dim]Standard Model: {chat_model}[/dim]")
 
-            # Initialize ResearchAgent if needed
+            # Initialize ResearchAgent if needed (or if in auto mode)
             self.research_agent = None
-            if self.use_deep_mode:
+            if self.use_deep_mode or self.auto_mode:
                 research_model = self.config.llm.resolve("research").model
-                console.print(f"[bold purple]Deep Research Mode Enabled[/bold purple] [dim](Model: {research_model})[/dim]")
+                mode_msg = "Deep Research Mode Enabled" if self.use_deep_mode else "Auto Mode Enabled"
+                console.print(f"[bold purple]{mode_msg}[/bold purple] [dim](Model: {research_model})[/dim]")
                 self.research_agent = ResearchAgent(
                     config=self.config,
                     retriever=self.hybrid_retriever,
@@ -88,7 +91,7 @@ class QueryInterface:
             console.print(f"[bold red]Initialization failed: {e}[/bold red]")
             sys.exit(1)
 
-        self.history: List[Dict[str, Any]] = []
+    self.history: List[Dict[str, Any]] = []
 
     def run_interactive(self):
         """Run the interactive query loop."""
@@ -138,7 +141,15 @@ class QueryInterface:
         if self.verbose:
             self._display_parsed_query(parsed_query)
 
-        if self.use_deep_mode and self.research_agent:
+        # Determine if we should use deep research
+        use_deep = self.use_deep_mode
+        if self.auto_mode and not use_deep:
+            is_complex = self.query_parser.analyze_complexity(parsed_query)
+            if is_complex:
+                use_deep = True
+                console.print("[dim italic]Auto-switching to Deep Research Mode due to query complexity[/dim italic]")
+
+        if use_deep and self.research_agent:
             # Deep Research Path
             with console.status(
                 "[bold purple]Starting Deep Research...[/bold purple]"
@@ -322,10 +333,11 @@ def main():
     parser.add_argument("--query", "-q", type=str, help="Run a single query and exit")
     parser.add_argument("--export", "-e", type=str, help="Path to export results (JSON)")
     parser.add_argument("--deep", action="store_true", help="Enable Deep Research Mode (Iterative Refinement)")
+    parser.add_argument("--auto", action="store_true", help="Automatically enable Deep Research for complex queries")
 
     args = parser.parse_args()
 
-    interface = QueryInterface(verbose=args.verbose, use_deep_mode=args.deep)
+    interface = QueryInterface(verbose=args.verbose, use_deep_mode=args.deep, auto_mode=args.auto)
 
     try:
         if args.query:
