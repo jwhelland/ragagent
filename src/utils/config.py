@@ -80,6 +80,7 @@ class LLMSection(BaseSettings):
     extraction: PartialLLMConfig = Field(default_factory=PartialLLMConfig)
     rewriting: PartialLLMConfig = Field(default_factory=PartialLLMConfig)
     chat: PartialLLMConfig = Field(default_factory=PartialLLMConfig)
+    research: PartialLLMConfig = Field(default_factory=PartialLLMConfig)
 
     def resolve(self, section: str) -> LLMConfig:
         """Resolve effective configuration for a specific section.

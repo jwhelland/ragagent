@@ -130,3 +130,54 @@ class HybridRetrievalResult(BaseModel):
     def get_document_ids(self) -> Set[str]:
         """Get all unique document IDs from results."""
         return {chunk.document_id for chunk in self.chunks}
+
+
+class SufficiencyResult(BaseModel):
+    """Result of an information sufficiency check."""
+
+    model_config = ConfigDict(frozen=True)
+
+    is_sufficient: bool = Field(..., description="Whether gathered information is sufficient")
+    missing_information: List[str] = Field(
+        default_factory=list, description="List of missing information points"
+    )
+    reasoning: str = Field(..., description="Reasoning for the assessment")
+
+
+class ResearchStep(BaseModel):
+    """A single step in the iterative research process."""
+
+    model_config = ConfigDict(frozen=True)
+
+    step_number: int = Field(..., description="Step number (1-based)")
+    timestamp: float = Field(default_factory=time.time, description="Step timestamp")
+    sub_queries: List[str] = Field(
+        default_factory=list, description="Sub-queries generated in this step"
+    )
+    sufficiency_check: Optional[SufficiencyResult] = Field(
+        None, description="Sufficiency result at this step"
+    )
+    new_chunks_found: int = Field(default=0, description="Number of new chunks found")
+
+
+class ResearchResult(BaseModel):
+    """Result of a deep research operation."""
+
+    model_config = ConfigDict(extra="allow")
+
+    query_id: str = Field(..., description="Query identifier")
+    original_query: str = Field(..., description="Original user query")
+    final_answer: GeneratedResponse = Field(..., description="Final synthesized answer")
+    steps: List[ResearchStep] = Field(default_factory=list, description="Research steps taken")
+    total_chunks: int = Field(..., description="Total unique chunks accumulated")
+    total_time_ms: float = Field(..., description="Total research time in milliseconds")
+    accumulated_context: List[HybridChunk] = Field(
+        default_factory=list, description="All accumulated chunks"
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        data = self.model_dump()
+        data["final_answer"] = self.final_answer.to_dict()
+        data["accumulated_context"] = [c.to_dict() for c in self.accumulated_context]
+        return data

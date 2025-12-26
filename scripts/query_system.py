@@ -4,7 +4,7 @@ This script provides an interactive loop for querying the system,
 displaying results with formatting, and generating natural language answers.
 
 Usage:
-    uv run python scripts/query_system.py [--verbose] [--export PATH]
+    uv run python scripts/query_system.py [--verbose] [--export PATH] [--deep]
 """
 
 import argparse
@@ -26,8 +26,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from src.retrieval.hybrid_retriever import HybridRetriever
-from src.retrieval.models import HybridRetrievalResult
+from src.retrieval.models import HybridRetrievalResult, ResearchResult
 from src.retrieval.query_parser import QueryParser
+from src.retrieval.research_agent import ResearchAgent
 from src.storage.neo4j_manager import Neo4jManager
 from src.utils.config import Config
 
@@ -38,13 +39,15 @@ console = Console()
 class QueryInterface:
     """Interactive CLI for querying the system."""
 
-    def __init__(self, verbose: bool = False):
+    def __init__(self, verbose: bool = False, use_deep_mode: bool = False):
         """Initialize query interface.
 
         Args:
             verbose: Whether to show detailed retrieval info
+            use_deep_mode: Whether to use Deep Research Mode
         """
         self.verbose = verbose
+        self.use_deep_mode = use_deep_mode
         self.config = Config.from_yaml()
 
         # Configure logging
@@ -63,6 +66,22 @@ class QueryInterface:
 
             self.query_parser = QueryParser(config=self.config)
             self.hybrid_retriever = HybridRetriever(config=self.config, neo4j_manager=self.neo4j)
+            
+            # Display model being used
+            chat_model = self.config.llm.resolve("chat").model
+            console.print(f"[dim]Standard Model: {chat_model}[/dim]")
+
+            # Initialize ResearchAgent if needed
+            self.research_agent = None
+            if self.use_deep_mode:
+                research_model = self.config.llm.resolve("research").model
+                console.print(f"[bold purple]Deep Research Mode Enabled[/bold purple] [dim](Model: {research_model})[/dim]")
+                self.research_agent = ResearchAgent(
+                    config=self.config,
+                    retriever=self.hybrid_retriever,
+                    response_generator=self.hybrid_retriever.response_generator,
+                    query_parser=self.query_parser
+                )
 
             console.print("[bold green]System ready![/bold green]")
         except Exception as e:
@@ -119,27 +138,56 @@ class QueryInterface:
         if self.verbose:
             self._display_parsed_query(parsed_query)
 
-        with console.status(
-            "[bold yellow]Retrieving context and generating answer...[/bold yellow]"
-        ):
-            result = self.hybrid_retriever.retrieve(parsed_query, top_k=top_k, generate_answer=True)
+        if self.use_deep_mode and self.research_agent:
+            # Deep Research Path
+            with console.status(
+                "[bold purple]Starting Deep Research...[/bold purple]"
+            ) as status:
+                def update_status(msg: str):
+                    status.update(f"[bold purple]{msg}[/bold purple]")
+                    
+                result = self.research_agent.research(
+                    query_text, 
+                    status_callback=update_status
+                )
+            
+            self._display_research_result(result)
+            
+            # Add to history
+            self.history.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "query": query_text,
+                    "answer": result.final_answer.answer,
+                    "result": result.to_dict(),
+                    "mode": "deep_research"
+                }
+            )
+            
+        else:
+            # Standard Retrieval Path
+            with console.status(
+                "[bold yellow]Retrieving context and generating answer...[/bold yellow]"
+            ):
+                result = self.hybrid_retriever.retrieve(parsed_query, top_k=top_k, generate_answer=True)
 
-        # Display answer
-        self._display_answer(result)
+            # Display answer
+            self._display_answer(result)
 
-        # Display chunks in verbose mode
-        if self.verbose:
-            self._display_chunks(result)
+            # Display chunks in verbose mode
+            if self.verbose:
+                self._display_chunks(result)
 
-        # Add to history
-        self.history.append(
-            {
-                "timestamp": datetime.now().isoformat(),
-                "query": query_text,
-                "answer": result.answer.answer if result.answer else None,
-                "result": result.to_dict(),
-            }
-        )
+            # Add to history
+            self.history.append(
+                {
+                    "timestamp": datetime.now().isoformat(),
+                    "query": query_text,
+                    "answer": result.answer.answer if result.answer else None,
+                    "result": result.to_dict(),
+                    "mode": "standard"
+                }
+            )
 
     def _display_parsed_query(self, parsed_query: Any):
         """Display details of the parsed query."""
@@ -171,6 +219,36 @@ class QueryInterface:
 
         console.print(
             f"[dim]Strategy: {result.strategy_used.value} | Time: {result.retrieval_time_ms:.0f}ms[/dim]\n"
+        )
+
+    def _display_research_result(self, result: ResearchResult):
+        """Display the deep research result."""
+        
+        # Display Steps
+        console.print("\n[bold purple]Research Steps:[/bold purple]")
+        for step in result.steps:
+            missing_info = ", ".join(step.sufficiency_check.missing_information) if step.sufficiency_check else "None"
+            is_sufficient = "✅" if step.sufficiency_check and step.sufficiency_check.is_sufficient else "❌"
+            
+            console.print(f"Step {step.step_number}: Sufficiency: {is_sufficient} | New Chunks: {step.new_chunks_found}")
+            if not step.sufficiency_check.is_sufficient:
+                console.print(f"  [dim]Missing: {missing_info}[/dim]")
+                if step.sub_queries:
+                    console.print(f"  [dim]Generated {len(step.sub_queries)} sub-queries[/dim]")
+
+        # Display Final Answer
+        console.print("\n")
+        console.print(
+            Panel(
+                Markdown(result.final_answer.answer),
+                title=f"[bold purple]Deep Research Answer[/bold purple]",
+                border_style="purple",
+                expand=False,
+            )
+        )
+        
+        console.print(
+            f"[dim]Total Chunks: {result.total_chunks} | Time: {result.total_time_ms:.0f}ms[/dim]\n"
         )
 
     def _display_chunks(self, result: HybridRetrievalResult):
@@ -223,10 +301,12 @@ class QueryInterface:
         table.add_column("#", justify="right")
         table.add_column("Time")
         table.add_column("Query")
+        table.add_column("Mode")
 
         for i, entry in enumerate(self.history, 1):
             time_str = entry["timestamp"].split("T")[1].split(".")[0]
-            table.add_row(str(i), time_str, entry["query"])
+            mode = entry.get("mode", "standard")
+            table.add_row(str(i), time_str, entry["query"], mode)
 
         console.print(table)
 
@@ -241,10 +321,11 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed retrieval info")
     parser.add_argument("--query", "-q", type=str, help="Run a single query and exit")
     parser.add_argument("--export", "-e", type=str, help="Path to export results (JSON)")
+    parser.add_argument("--deep", action="store_true", help="Enable Deep Research Mode (Iterative Refinement)")
 
     args = parser.parse_args()
 
-    interface = QueryInterface(verbose=args.verbose)
+    interface = QueryInterface(verbose=args.verbose, use_deep_mode=args.deep)
 
     try:
         if args.query:

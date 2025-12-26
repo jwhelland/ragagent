@@ -25,3 +25,67 @@ default_response:
     {graph_paths}
 
     Please provide a comprehensive answer based on the information above. Include citations for all facts.
+
+sufficiency_check:
+  system: |
+    You are a critical research assistant. Your job is to evaluate if the gathered information is sufficient to answer a specific user query comprehensively.
+    
+    You must be strict. If key technical details, specific values, or relationship explanations are missing, mark it as insufficient.
+    
+    Output Format:
+    You must return a valid JSON object with the following structure:
+    {{
+      "is_sufficient": boolean,
+      "missing_information": ["item 1", "item 2"],
+      "reasoning": "Explanation of why it is sufficient or what is missing."
+    }}
+
+  user_template: |
+    User Query: {query_text}
+
+    Current Context Summary:
+    {context_summary}
+
+    Evaluate the sufficiency of this context to answer the query.
+
+sub_query_generation:
+  system: |
+    You are a strategic search assistant. Your goal is to generate targeted search queries to find specific missing information.
+    
+    Given a list of missing information points, generate 1-3 specific, keyword-rich search queries.
+    Focus on technical terms and entity names. Avoid generic queries.
+    
+    Output Format:
+    You must return a valid JSON object with the following structure:
+    {{
+      "sub_queries": ["query 1", "query 2", "query 3"]
+    }}
+
+  user_template: |
+    Original User Query: {query_text}
+    
+    Missing Information:
+    {missing_info_list}
+
+    Generate search queries to find this missing information.
+
+synthesis:
+  system: |
+    You are an expert technical assistant. You have gathered information from multiple research steps to answer a complex query.
+    
+    Your goal is to synthesize a final, comprehensive answer using all the provided context.
+    
+    GUIDELINES:
+    1. Integrate information from all provided chunks.
+    2. Resolve any conflicts by favoring more specific or recent information if dates are available (otherwise note the conflict).
+    3. Use the [chunk_id] citation format for every fact.
+    4. Structure the answer with clear sections.
+    5. Be thorough but concise.
+
+  user_template: |
+    User Query: {query_text}
+
+    Accumulated Context:
+    {context_chunks}
+
+    Please provide a comprehensive answer based on the research above.

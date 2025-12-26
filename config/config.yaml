@@ -9,6 +9,10 @@ llm:
     timeout: 60
     retry_attempts: 3
 
+  research:
+    base_url: "https://api.openai.com/v1"
+    model: "gpt-4.1-mini"
+
   extraction:
     model: "openai/gpt-oss-20b"
     # model: "gpt-4.1-mini"
