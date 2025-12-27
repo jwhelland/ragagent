@@ -43,7 +43,7 @@ def reset_neo4j(config) -> bool:
 
         # Clear database
         neo4j_manager.clear_database()
-        
+
         # Re-create schema to ensure constraints exist for next run
         logger.info("Re-applying Neo4j schema constraints...")
         neo4j_manager.create_schema()
@@ -125,7 +125,7 @@ def main():
     try:
         # Load configuration
         config = load_config()
-        
+
         # Reset databases
         neo4j_success = reset_neo4j(config)
         qdrant_success = reset_qdrant(config)

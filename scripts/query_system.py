@@ -18,7 +18,6 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from datetime import datetime
 from typing import Any, Dict, List
 
-
 from loguru import logger
 from rich.console import Console
 from rich.markdown import Markdown
@@ -68,7 +67,7 @@ class QueryInterface:
 
             self.query_parser = QueryParser(config=self.config)
             self.hybrid_retriever = HybridRetriever(config=self.config, neo4j_manager=self.neo4j)
-            
+
             # Display model being used
             chat_model = self.config.llm.resolve("chat").model
             console.print(f"[dim]Standard Model: {chat_model}[/dim]")
@@ -77,13 +76,17 @@ class QueryInterface:
             self.research_agent = None
             if self.use_deep_mode or self.auto_mode:
                 research_model = self.config.llm.resolve("research").model
-                mode_msg = "Deep Research Mode Enabled" if self.use_deep_mode else "Auto Mode Enabled"
-                console.print(f"[bold purple]{mode_msg}[/bold purple] [dim](Model: {research_model})[/dim]")
+                mode_msg = (
+                    "Deep Research Mode Enabled" if self.use_deep_mode else "Auto Mode Enabled"
+                )
+                console.print(
+                    f"[bold purple]{mode_msg}[/bold purple] [dim](Model: {research_model})[/dim]"
+                )
                 self.research_agent = ResearchAgent(
                     config=self.config,
                     retriever=self.hybrid_retriever,
                     response_generator=self.hybrid_retriever.response_generator,
-                    query_parser=self.query_parser
+                    query_parser=self.query_parser,
                 )
 
             console.print("[bold green]System ready![/bold green]")
@@ -151,28 +154,32 @@ class QueryInterface:
             is_complex = self.query_parser.analyze_complexity(parsed_query)
             if is_complex:
                 use_deep = True
-                logger.info(f"Auto-mode: Complex query detected, switching to Deep Research. Query: {query_text}")
-                console.print("[dim italic]Auto-switching to Deep Research Mode due to query complexity[/dim italic]")
+                logger.info(
+                    f"Auto-mode: Complex query detected, switching to Deep Research. Query: {query_text}"
+                )
+                console.print(
+                    "[dim italic]Auto-switching to Deep Research Mode due to query complexity[/dim italic]"
+                )
             else:
-                logger.info(f"Auto-mode: Simple query detected, using Standard Retrieval. Query: {query_text}")
+                logger.info(
+                    f"Auto-mode: Simple query detected, using Standard Retrieval. Query: {query_text}"
+                )
                 if self.verbose:
-                    console.print("[dim italic]Auto-mode: Using Standard Retrieval for simple query[/dim italic]")
+                    console.print(
+                        "[dim italic]Auto-mode: Using Standard Retrieval for simple query[/dim italic]"
+                    )
 
         if use_deep and self.research_agent:
             # Deep Research Path
-            with console.status(
-                "[bold purple]Starting Deep Research...[/bold purple]"
-            ) as status:
+            with console.status("[bold purple]Starting Deep Research...[/bold purple]") as status:
+
                 def update_status(msg: str):
                     status.update(f"[bold purple]{msg}[/bold purple]")
-                    
-                result = self.research_agent.research(
-                    query_text, 
-                    status_callback=update_status
-                )
-            
+
+                result = self.research_agent.research(query_text, status_callback=update_status)
+
             self._display_research_result(result)
-            
+
             # Add to history
             self.history.append(
                 {
@@ -180,16 +187,18 @@ class QueryInterface:
                     "query": query_text,
                     "answer": result.final_answer.answer,
                     "result": result.to_dict(),
-                    "mode": "deep_research"
+                    "mode": "deep_research",
                 }
             )
-            
+
         else:
             # Standard Retrieval Path
             with console.status(
                 "[bold yellow]Retrieving context and generating answer...[/bold yellow]"
             ):
-                result = self.hybrid_retriever.retrieve(parsed_query, top_k=top_k, generate_answer=True)
+                result = self.hybrid_retriever.retrieve(
+                    parsed_query, top_k=top_k, generate_answer=True
+                )
 
             # Display answer
             self._display_answer(result)
@@ -205,7 +214,7 @@ class QueryInterface:
                     "query": query_text,
                     "answer": result.answer.answer if result.answer else None,
                     "result": result.to_dict(),
-                    "mode": "standard"
+                    "mode": "standard",
                 }
             )
 
@@ -243,14 +252,22 @@ class QueryInterface:
 
     def _display_research_result(self, result: ResearchResult):
         """Display the deep research result."""
-        
+
         # Display Steps
         console.print("\n[bold purple]Research Steps:[/bold purple]")
         for step in result.steps:
-            missing_info = ", ".join(step.sufficiency_check.missing_information) if step.sufficiency_check else "None"
-            is_sufficient = "✅" if step.sufficiency_check and step.sufficiency_check.is_sufficient else "❌"
-            
-            console.print(f"Step {step.step_number}: Sufficiency: {is_sufficient} | New Chunks: {step.new_chunks_found}")
+            missing_info = (
+                ", ".join(step.sufficiency_check.missing_information)
+                if step.sufficiency_check
+                else "None"
+            )
+            is_sufficient = (
+                "✅" if step.sufficiency_check and step.sufficiency_check.is_sufficient else "❌"
+            )
+
+            console.print(
+                f"Step {step.step_number}: Sufficiency: {is_sufficient} | New Chunks: {step.new_chunks_found}"
+            )
             if not step.sufficiency_check.is_sufficient:
                 console.print(f"  [dim]Missing: {missing_info}[/dim]")
                 if step.sub_queries:
@@ -261,12 +278,12 @@ class QueryInterface:
         console.print(
             Panel(
                 Markdown(result.final_answer.answer),
-                title=f"[bold purple]Deep Research Answer[/bold purple]",
+                title="[bold purple]Deep Research Answer[/bold purple]",
                 border_style="purple",
                 expand=False,
             )
         )
-        
+
         console.print(
             f"[dim]Total Chunks: {result.total_chunks} | Time: {result.total_time_ms:.0f}ms[/dim]\n"
         )
@@ -347,8 +364,12 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed retrieval info")
     parser.add_argument("--query", "-q", type=str, help="Run a single query and exit")
     parser.add_argument("--export", "-e", type=str, help="Path to export results (JSON)")
-    parser.add_argument("--deep", action="store_true", help="Enable Deep Research Mode (Iterative Refinement)")
-    parser.add_argument("--auto", action="store_true", help="Automatically enable Deep Research for complex queries")
+    parser.add_argument(
+        "--deep", action="store_true", help="Enable Deep Research Mode (Iterative Refinement)"
+    )
+    parser.add_argument(
+        "--auto", action="store_true", help="Automatically enable Deep Research for complex queries"
+    )
 
     args = parser.parse_args()
 

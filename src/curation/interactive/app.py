@@ -372,7 +372,7 @@ class ReviewApp(App):
         # Set initial title and subtitle
         def set_title() -> None:
             try:
-                header = self.query_one(CustomHeader)
+                self.query_one(CustomHeader)
                 # Title is now empty by default
                 pass
             except Exception:
@@ -456,7 +456,7 @@ class ReviewApp(App):
                     total_count = manager.get_total_entity_candidate_count(
                         status=self.filter_status if self.filter_status != "all" else None,
                     )
-                    
+
                     results = manager.get_entity_candidates(
                         status=self.filter_status if self.filter_status != "all" else None,
                         limit=50,  # Pagination - fetch 50 at a time
@@ -503,9 +503,9 @@ class ReviewApp(App):
                     # If filtered, total count is the filtered count (for this page)
                     # Ideally we'd query DB with filters, but for now we'll stick to client-side filtering on the page
                     if len(candidates) < total_count:
-                         # This is inaccurate if filters reduce the count significantly, but accurate for "displayed" items
-                         # A better approach would be to push filters to DB query
-                         pass
+                        # This is inaccurate if filters reduce the count significantly, but accurate for "displayed" items
+                        # A better approach would be to push filters to DB query
+                        pass
 
                 # Calculate target index before any updates
                 if preserve_index and candidates:
@@ -630,7 +630,8 @@ class ReviewApp(App):
             elif show_loaded_notification:
                 mode_str = "entity" if self.review_mode == ReviewMode.ENTITY else "relationship"
                 self.notify(
-                    f"Loaded {len(candidates)} of {total_count} {mode_str} candidates", severity="information"
+                    f"Loaded {len(candidates)} of {total_count} {mode_str} candidates",
+                    severity="information",
                 )
 
         self.call_after_refresh(finalize)

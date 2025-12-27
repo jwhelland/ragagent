@@ -244,7 +244,11 @@ class PDFParser:
 
             for item_iter in result.document.iterate_items():
                 # Unpack tuple if necessary (docling 2.0+ behavior)
-                item = item_iter[0] if isinstance(item_iter, tuple) and len(item_iter) > 0 else item_iter
+                item = (
+                    item_iter[0]
+                    if isinstance(item_iter, tuple) and len(item_iter) > 0
+                    else item_iter
+                )
 
                 # Get label safely
                 item_type = str(item.label) if hasattr(item, "label") else ""
@@ -263,7 +267,9 @@ class PDFParser:
                         level=1,
                         title=item.text if hasattr(item, "text") else "",
                         content="",
-                        start_page=item.prov[0].page_no if hasattr(item, "prov") and item.prov else 1,
+                        start_page=(
+                            item.prov[0].page_no if hasattr(item, "prov") and item.prov else 1
+                        ),
                         end_page=item.prov[0].page_no if hasattr(item, "prov") and item.prov else 1,
                         hierarchy_path=str(section_counter),
                     )
@@ -331,10 +337,14 @@ class PDFParser:
             position = 0
             for item_iter in result.document.iterate_items():
                 # Unpack tuple if necessary
-                item = item_iter[0] if isinstance(item_iter, tuple) and len(item_iter) > 0 else item_iter
-                
+                item = (
+                    item_iter[0]
+                    if isinstance(item_iter, tuple) and len(item_iter) > 0
+                    else item_iter
+                )
+
                 label = str(item.label) if hasattr(item, "label") else ""
-                
+
                 if label == "table":
                     position += 1
 
@@ -386,8 +396,12 @@ class PDFParser:
             position = 0
             for item_iter in result.document.iterate_items():
                 # Unpack tuple if necessary
-                item = item_iter[0] if isinstance(item_iter, tuple) and len(item_iter) > 0 else item_iter
-                
+                item = (
+                    item_iter[0]
+                    if isinstance(item_iter, tuple) and len(item_iter) > 0
+                    else item_iter
+                )
+
                 label = str(item.label) if hasattr(item, "label") else ""
 
                 if label in ["figure", "picture", "image"]:

@@ -58,10 +58,12 @@ class EmbeddingGenerator:
             logger.info(f"Initializing OpenAI embedding client: {self.config.embedding_model}")
             api_key = self.config.embedding_api_key
             base_url = self.config.embedding_base_url
-            
+
             if not api_key and not base_url and not os.getenv("OPENAI_API_KEY"):
-                logger.warning("No API key provided for OpenAI embeddings. This might fail unless using a local no-auth endpoint.")
-            
+                logger.warning(
+                    "No API key provided for OpenAI embeddings. This might fail unless using a local no-auth endpoint."
+                )
+
             self.client = create_openai_client(api_key=api_key, base_url=base_url)
             self.model = None
             logger.success(f"Initialized OpenAI client for {self.config.embedding_model}")
@@ -153,8 +155,7 @@ class EmbeddingGenerator:
                     for i in range(0, len(truncated_texts), batch_size):
                         batch = truncated_texts[i : i + batch_size]
                         response = self.client.embeddings.create(
-                            input=batch,
-                            model=self.config.embedding_model
+                            input=batch, model=self.config.embedding_model
                         )
                         # Ensure order corresponds to input
                         generated.extend([data.embedding for data in response.data])

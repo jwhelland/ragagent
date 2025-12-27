@@ -252,9 +252,7 @@ class CandidateList(Widget):
         if self.candidates:
             self.current_index = len(self.candidates) - 1
 
-    def refresh_candidates(
-        self, candidates: List[EntityCandidate | RelationshipCandidate]
-    ) -> None:
+    def refresh_candidates(self, candidates: List[EntityCandidate | RelationshipCandidate]) -> None:
         """Refresh the candidate list with new data.
 
         Args:

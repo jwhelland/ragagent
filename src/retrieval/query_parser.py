@@ -413,14 +413,14 @@ class QueryParser:
         try:
             client = self.llm_client
             llm_cfg = self.config.llm.resolve("chat")
-            
+
             if not client:
                 # Initialize ad-hoc client if config allows
                 if llm_cfg.provider == "openai":
                     client = create_openai_client(
                         api_key=self.config.openai_api_key,
                         base_url=llm_cfg.base_url,
-                        timeout=5.0  # Short timeout for classifier
+                        timeout=5.0,  # Short timeout for classifier
                     )
 
             if client:
@@ -909,9 +909,17 @@ class QueryParser:
 
         # 2. Keyword Check
         complexity_keywords = {
-            "comprehensive", "detailed", "analyze", "analysis", 
-            "compare", "comparison", "relationship between", 
-            "impact of", "effect of", "trace", "history of"
+            "comprehensive",
+            "detailed",
+            "analyze",
+            "analysis",
+            "compare",
+            "comparison",
+            "relationship between",
+            "impact of",
+            "effect of",
+            "trace",
+            "history of",
         }
         query_lower = parsed_query.original_text.lower()
         if any(kw in query_lower for kw in complexity_keywords):

@@ -148,7 +148,7 @@ class TextRewriter:
         client = create_openai_client(
             base_url=self.llm.base_url,
             timeout=self.llm.timeout,
-            api_key=self.llm.openai_api_key if hasattr(self.llm, "openai_api_key") else None
+            api_key=self.llm.openai_api_key if hasattr(self.llm, "openai_api_key") else None,
         )
         resp = client.chat.completions.create(
             model=self.llm.model,

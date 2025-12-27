@@ -221,7 +221,7 @@ class ResponseGenerator:
         client = create_openai_client(
             api_key=self.config.openai_api_key,
             base_url=self.llm_config.base_url,
-            timeout=self.llm_config.timeout
+            timeout=self.llm_config.timeout,
         )
         response = client.chat.completions.create(
             model=self.llm_config.model,

@@ -40,7 +40,9 @@ def create_openai_client(
 
     # Log configuration (masking key)
     masked_key = (
-        f"{final_api_key[:4]}...{final_api_key[-4:]}" if final_api_key and len(final_api_key) > 8 else "None"
+        f"{final_api_key[:4]}...{final_api_key[-4:]}"
+        if final_api_key and len(final_api_key) > 8
+        else "None"
     )
     logger.debug(
         f"Creating OpenAI client: base_url={final_base_url}, "

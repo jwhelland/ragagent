@@ -200,7 +200,7 @@ class LLMExtractor:
         client = create_openai_client(
             base_url=self.config.base_url,
             timeout=self.config.timeout,
-            api_key=self.config.openai_api_key if hasattr(self.config, "openai_api_key") else None
+            api_key=self.config.openai_api_key if hasattr(self.config, "openai_api_key") else None,
         )
 
         # Base arguments for chat completion

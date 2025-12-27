@@ -1023,9 +1023,7 @@ class IngestionPipeline:
 
         results = []
         for pdf_path in pdf_paths:
-            result = self.process_document(
-                pdf_path, force_reingest=force_reingest, topics=topics
-            )
+            result = self.process_document(pdf_path, force_reingest=force_reingest, topics=topics)
             results.append(result)
 
             # Log progress
