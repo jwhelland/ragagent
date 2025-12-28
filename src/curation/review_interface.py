@@ -14,7 +14,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from src.curation.batch_operations import BatchCurationService
+from src.curation.batch_operations import (
+    BatchCurationService,
+    build_approved_entity_lookup,
+)
 from src.curation.entity_approval import EntityCurationService, get_neighborhood_issues
 from src.normalization.normalization_table import (
     NormalizationMethod,
@@ -591,6 +594,141 @@ def batch_approve(
             console.print(f"[red]Failures: {result.failed}[/red]")
         if result.rolled_back:
             console.print("[red]Rolled back batch due to errors.[/red]")
+    finally:
+        store.close()
+        manager.close()
+
+
+@app.command("auto-approve-existing")
+def auto_approve_existing(
+    limit: int = typer.Option(1000, help="Number of pending candidates to consider.", min=1),
+    offset: int = typer.Option(0, help="Offset for paging.", min=0),
+    dry_run: bool = typer.Option(
+        True, help="Preview without executing (default: True for safety)."
+    ),
+    preview_limit: int = typer.Option(30, help="Max items to show in preview.", min=1),
+    table_path: Path | None = typer.Option(None, help="Override normalization table path."),
+    config: Path = typer.Option(Path("config/config.yaml"), help="Path to config file."),
+) -> None:
+    """Auto-merge pending candidates that match existing approved entities.
+
+    This command scans pending entity candidates and automatically merges those
+    that exactly match (by name or alias, with matching type) an already-approved
+    entity. This is useful after re-ingesting documents to quickly resolve
+    candidates that represent entities you've already reviewed and approved.
+
+    Safety features:
+    - Candidates with conflicting types are SKIPPED (require human review)
+    - Matching is case-insensitive but type must match exactly
+    - Default is dry-run mode (--no-dry-run to execute)
+    - Supports checkpoint/rollback for atomic operations
+
+    WARNING: This command must NOT run concurrently with ragagent-review-interactive,
+    ragagent-ingest, or other batch-approve instances.
+    """
+    cfg = _load(config)
+    store = create_candidate_store(cfg)
+    service, _table, manager = _create_curation_service(cfg, table_path)
+    batch_service = BatchCurationService(service, cfg.curation)
+
+    try:
+        # Build the approved entity lookup
+        console.print("[cyan]Building approved entity lookup...[/cyan]")
+        lookup = build_approved_entity_lookup(manager)
+        console.print(f"[dim]Found {len(lookup)} approved entities[/dim]")
+
+        if len(lookup) == 0:
+            console.print("[yellow]No approved entities found. Nothing to match against.[/yellow]")
+            return
+
+        # Get pending candidates
+        console.print(
+            f"[cyan]Loading pending candidates (limit={limit}, offset={offset})...[/cyan]"
+        )
+        candidates = store.list_candidates(
+            status=CandidateStatus.PENDING.value,
+            candidate_types=None,
+            min_confidence=None,
+            limit=limit,
+            offset=offset,
+        )
+
+        if not candidates:
+            console.print("[yellow]No pending candidates found.[/yellow]")
+            return
+
+        console.print(f"[dim]Found {len(candidates)} pending candidates[/dim]")
+
+        # Preview the operation
+        preview = batch_service.preview_auto_approve_existing(candidates, lookup)
+
+        # Show summary
+        console.print("\n[bold]Auto-Approve Existing Summary[/bold]")
+        console.print(f"  Candidates to merge: [green]{len(preview.to_merge)}[/green]")
+        console.print(
+            f"  Skipped (conflicting types): [yellow]{len(preview.skipped_conflicting)}[/yellow]"
+        )
+        console.print(f"  Skipped (no match): [dim]{len(preview.skipped_no_match)}[/dim]")
+
+        if dry_run:
+            console.print("\n[yellow]DRY RUN - No changes will be made[/yellow]")
+
+            if preview.to_merge:
+                # Show what would be merged
+                table = Table(title="Candidates to Merge")
+                table.add_column("Candidate", style="cyan")
+                table.add_column("→", style="dim")
+                table.add_column("Target Entity", style="green")
+
+                for candidate_key, entity_id in preview.to_merge[:preview_limit]:
+                    # Get candidate name for display
+                    candidate = store.get_candidate(candidate_key)
+                    name = candidate.canonical_name if candidate else candidate_key
+                    table.add_row(name, "→", entity_id[:12] + "...")
+
+                console.print(table)
+
+                if len(preview.to_merge) > preview_limit:
+                    console.print(
+                        f"\n[dim]... and {len(preview.to_merge) - preview_limit} more[/dim]"
+                    )
+
+            if preview.skipped_conflicting:
+                console.print(
+                    f"\n[yellow]Skipped due to conflicting types ({len(preview.skipped_conflicting)}):[/yellow]"
+                )
+                for key in preview.skipped_conflicting[:10]:
+                    console.print(f"  {key}")
+                if len(preview.skipped_conflicting) > 10:
+                    console.print(
+                        f"  [dim]... and {len(preview.skipped_conflicting) - 10} more[/dim]"
+                    )
+
+            console.print("\n[yellow]Re-run with --no-dry-run to apply changes[/yellow]")
+            return
+
+        # Execute the merges
+        if not preview.to_merge:
+            console.print("[yellow]No candidates to merge.[/yellow]")
+            return
+
+        console.print(f"\n[cyan]Merging {len(preview.to_merge)} candidates...[/cyan]")
+        result = batch_service.auto_approve_existing_matches(candidates, lookup, dry_run=False)
+
+        if result.rolled_back:
+            console.print("[red]Operation rolled back due to errors.[/red]")
+            if result.failed:
+                console.print(f"[red]Failures: {result.failed}[/red]")
+        else:
+            console.print(
+                f"[green]✓ Merged {len(result.merged_entities)} candidates into existing entities[/green]"
+            )
+            console.print(f"[dim]Skipped: {len(result.skipped)}[/dim]")
+            if result.failed:
+                console.print(f"[yellow]Warnings: {len(result.failed)} failures[/yellow]")
+                for fail in result.failed[:5]:
+                    console.print(f"  {fail}")
+
     finally:
         store.close()
         manager.close()

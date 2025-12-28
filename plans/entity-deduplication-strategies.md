@@ -263,7 +263,37 @@ def load_known_entities(self) -> Dict[Tuple[str, str], str]:
 | Component | Effort | Status |
 |-----------|--------|--------|
 | Fix MENTIONED_IN gap in merge_candidate_into_entity | Low | ✅ Done |
-| Alias-aware lookup builder | Low | Pending |
-| `auto-approve-existing` CLI command | Medium | Pending |
+| Alias-aware lookup builder | Low | ✅ Done (2025-12-28) |
+| `auto-approve-existing` CLI command | Medium | ✅ Done (2025-12-28) |
 | TUI check vs approved entities (TODO at line 113) | Medium | Pending |
 | SmartMergeView widget | High | Pending |
+
+---
+
+## Implementation Notes (2025-12-28)
+
+### Strategy 2 Implementation Complete
+
+**Files Modified:**
+- `src/curation/batch_operations.py` - Added `ApprovedEntityLookup` class, `build_approved_entity_lookup()`, `AutoApproveMatchPreview` model, and `auto_approve_existing_matches()` method
+- `src/curation/review_interface.py` - Added `auto-approve-existing` CLI command
+- `tests/test_curation/test_batch_operations.py` - Added 17 new tests for the functionality
+
+**Usage:**
+```bash
+# Preview what would be merged (dry-run is default for safety)
+uv run ragagent-review auto-approve-existing
+
+# Execute the merges
+uv run ragagent-review auto-approve-existing --no-dry-run
+
+# Process a specific number of candidates
+uv run ragagent-review auto-approve-existing --limit 500 --no-dry-run
+```
+
+**Key Features:**
+- Alias-aware matching: Matches candidate names/aliases against approved entity names/aliases
+- Type strictness: Only merges when entity types match exactly
+- Safety: Skips candidates with `conflicting_types` (requires human review)
+- Dry-run default: Must explicitly use `--no-dry-run` to execute
+- Checkpoint/rollback: Uses existing undo infrastructure for atomic operations
