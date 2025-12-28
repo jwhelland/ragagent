@@ -12,7 +12,7 @@ from typing import Any, Dict, List
 import numpy as np
 from pydantic import BaseModel, Field
 
-from src.pipeline.ingestion_pipeline import IngestionPipeline
+from src.pipeline.stages.storage import StorageStage
 from src.storage.schemas import Chunk as GraphChunk
 from src.utils.config import Config
 
@@ -53,11 +53,12 @@ class _FakeQdrant:
 
 def test_store_document_and_chunks_maps_models() -> None:
     cfg = Config.from_yaml("config/config.yaml")
-    pipeline = IngestionPipeline(cfg)
 
     # Inject fakes (no network/db)
-    pipeline.neo4j_manager = _FakeNeo4j()
-    pipeline.qdrant_manager = _FakeQdrant()
+    neo4j = _FakeNeo4j()
+    qdrant = _FakeQdrant()
+
+    stage = StorageStage(cfg, neo4j, qdrant)
 
     class _Parsed:
         document_id = "doc-123"
@@ -80,17 +81,17 @@ def test_store_document_and_chunks_maps_models() -> None:
     ]
     embeddings = [np.zeros(768, dtype=np.float32)]
 
-    pipeline._store_document_and_chunks(parsed_doc, chunks, embeddings)
+    stage._store_document_and_chunks(parsed_doc, chunks, embeddings)
 
     # Document entity was created with canonical_name and id
-    created_doc = pipeline.neo4j_manager.created_entities[0]
+    created_doc = neo4j.created_entities[0]
     assert created_doc.id == "doc-123"
     assert created_doc.canonical_name  # non-empty
     assert created_doc.filename == "file.pdf"
 
     # Chunk mapping used GraphChunk model
-    assert len(pipeline.neo4j_manager.created_chunks) == 1
-    created_chunk = pipeline.neo4j_manager.created_chunks[0]
+    assert len(neo4j.created_chunks) == 1
+    created_chunk = neo4j.created_chunks[0]
     assert isinstance(created_chunk, GraphChunk)
     assert created_chunk.id == "c1"
     assert created_chunk.document_id == "doc-123"

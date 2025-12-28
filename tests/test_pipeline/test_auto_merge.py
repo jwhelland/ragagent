@@ -4,7 +4,7 @@ import pytest
 
 from src.ingestion.chunker import Chunk
 from src.normalization.entity_deduplicator import DeduplicationResult, MergeSuggestion
-from src.pipeline.ingestion_pipeline import IngestionPipeline
+from src.pipeline.stages.extraction import ExtractionStage
 from src.utils.config import Config
 
 
@@ -71,15 +71,15 @@ def test_auto_merge(mock_config):
         metadata={"merged_entities": [cand_a, cand_b, cand_c]},
     )
 
-    # 3. Setup Mock Deduplicator
-    # Mock DB managers to avoid connection attempts
+    # 3. Setup Stage and Mock Deduplicator
+    # Mock dependencies
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr("src.pipeline.ingestion_pipeline.Neo4jManager", MagicMock())
-        mp.setattr("src.pipeline.ingestion_pipeline.QdrantManager", MagicMock())
-        mp.setattr("src.pipeline.ingestion_pipeline.EmbeddingGenerator", MagicMock())
+        mp.setattr("src.pipeline.stages.extraction.EmbeddingGenerator", MagicMock())
+        mp.setattr("src.pipeline.stages.extraction.SpacyExtractor", MagicMock())
+        mp.setattr("src.pipeline.stages.extraction.LLMExtractor", MagicMock())
 
-        pipeline = IngestionPipeline(mock_config)
-        pipeline.entity_deduplicator = MagicMock()
+        stage = ExtractionStage(mock_config)
+        stage.entity_deduplicator = MagicMock()
 
         # Define what deduplicator returns
         # It should return a suggestion to merge A and B
@@ -100,11 +100,11 @@ def test_auto_merge(mock_config):
         # Second call (recursive) returns no suggestions
         result2 = DeduplicationResult(clusters=[], merge_suggestions=[])
 
-        pipeline.entity_deduplicator.deduplicate.side_effect = [result1, result2]
+        stage.entity_deduplicator.deduplicate.side_effect = [result1, result2]
 
         # 4. Run Logic
         chunks = [chunk]
-        pipeline._deduplicate_merged_entities(chunks)
+        stage._deduplicate_merged_entities(chunks)
 
         # 5. Assertions
         merged_entities = chunk.metadata["merged_entities"]

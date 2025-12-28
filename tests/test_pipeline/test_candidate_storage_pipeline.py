@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List
+from unittest.mock import MagicMock
 
-from src.pipeline.ingestion_pipeline import IngestionPipeline
+from src.pipeline.stages.storage import StorageStage
 from src.storage.schemas import EntityCandidate, RelationshipCandidate
 from src.utils.config import Config
 
@@ -30,8 +31,11 @@ class _FakeNeo4j:
 
 def test_store_entity_candidates_from_merged_entities() -> None:
     cfg = Config.from_yaml("config/config.yaml")
-    pipeline = IngestionPipeline(cfg)
-    pipeline.neo4j_manager = _FakeNeo4j()
+    # Mock Qdrant
+    fake_qdrant = MagicMock()
+    fake_neo4j = _FakeNeo4j()
+
+    stage = StorageStage(cfg, fake_neo4j, fake_qdrant)
 
     chunk = _Chunk(
         chunk_id="c1",
@@ -47,29 +51,32 @@ def test_store_entity_candidates_from_merged_entities() -> None:
                     "mention_count": 2,
                     "conflicting_types": ["SYSTEM"],
                     "provenance": [{"extractor": "llm"}, {"extractor": "spacy"}],
+                    "candidate_key": "COMPONENT:solar_array",  # ExtractionStage adds this
                 }
             ]
         },
     )
 
-    stored = pipeline._store_entity_candidates([chunk])
+    stored = stage._store_entity_candidates([chunk])
 
     assert stored == 1
-    assert len(pipeline.neo4j_manager.entity_candidates) == 1
-    cand = pipeline.neo4j_manager.entity_candidates[0]
+    assert len(fake_neo4j.entity_candidates) == 1
+    cand = fake_neo4j.entity_candidates[0]
     assert cand.canonical_name == "Solar Array"
     assert cand.candidate_type.value == "COMPONENT"
     assert cand.mention_count == 2
     assert cand.source_documents == ["doc-1"]
     assert cand.chunk_ids == ["c1"]
     assert cand.conflicting_types == ["SYSTEM"]
-    assert cand.candidate_key.startswith("COMPONENT:")
+    assert cand.candidate_key == "COMPONENT:solar_array"
 
 
 def test_store_relationship_candidates_from_llm_relationships() -> None:
     cfg = Config.from_yaml("config/config.yaml")
-    pipeline = IngestionPipeline(cfg)
-    pipeline.neo4j_manager = _FakeNeo4j()
+    fake_qdrant = MagicMock()
+    fake_neo4j = _FakeNeo4j()
+
+    stage = StorageStage(cfg, fake_neo4j, fake_qdrant)
 
     chunk = _Chunk(
         chunk_id="c2",
@@ -88,11 +95,11 @@ def test_store_relationship_candidates_from_llm_relationships() -> None:
         },
     )
 
-    stored = pipeline._store_relationship_candidates([chunk])
+    stored = stage._store_relationship_candidates([chunk])
 
     assert stored == 1
-    assert len(pipeline.neo4j_manager.relationship_candidates) == 1
-    rel = pipeline.neo4j_manager.relationship_candidates[0]
+    assert len(fake_neo4j.relationship_candidates) == 1
+    rel = fake_neo4j.relationship_candidates[0]
     assert rel.source == "battery"
     assert rel.target == "solar_array"
     assert rel.type == "DEPENDS_ON"

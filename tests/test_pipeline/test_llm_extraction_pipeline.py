@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Dict, List
+from unittest.mock import MagicMock
 
 from src.extraction.models import ExtractedEntity, ExtractedRelationship
-from src.pipeline.ingestion_pipeline import IngestionPipeline
+from src.pipeline.base import PipelineContext
+from src.pipeline.stages.extraction import ExtractionStage
 from src.utils.config import Config
 
 
@@ -65,51 +68,67 @@ class _FakeLLMExtractor:
 
 def test_llm_entities_added_to_chunk_metadata() -> None:
     cfg = Config.from_yaml("config/config.yaml")
-    pipeline = IngestionPipeline(cfg)
-    pipeline.llm_extractor = _FakeLLMExtractor()
 
-    chunk = _Chunk(
-        chunk_id="c1",
-        document_id="doc-1",
-        content="Solar arrays provide power",
-        metadata={"document_title": "Power", "section_title": "EPS"},
-    )
+    with MagicMock() as mock_embedder:
+        stage = ExtractionStage(cfg)
+        stage.llm_extractor = _FakeLLMExtractor()
+        stage.embeddings = mock_embedder  # Mock embedder
+        stage.spacy_extractor = MagicMock()  # Mock spacy to avoid load
 
-    count = pipeline._extract_llm_entities([chunk])
+        chunk = _Chunk(
+            chunk_id="c1",
+            document_id="doc-1",
+            content="Solar arrays provide power",
+            metadata={"document_title": "Power", "section_title": "EPS"},
+        )
 
-    assert count == 1
-    llm_entities = chunk.metadata.get("llm_entities", [])
-    assert len(llm_entities) == 1
-    assert llm_entities[0]["name"] == "solar array"
-    assert llm_entities[0]["type"] == "COMPONENT"
-    assert llm_entities[0]["confidence"] == 0.9
+        context = PipelineContext(file_path=Path("dummy"), config=cfg)
+
+        count = stage._extract_llm_entities([chunk], context)
+
+        assert count == 1
+        llm_entities = chunk.metadata.get("llm_entities", [])
+        assert len(llm_entities) == 1
+        assert llm_entities[0]["name"] == "solar array"
+        assert llm_entities[0]["type"] == "COMPONENT"
+        assert llm_entities[0]["confidence"] == 0.9
+
+        # Check cache
+        assert "c1" in context.llm_entities_by_chunk
+        assert len(context.llm_entities_by_chunk["c1"]) == 1
 
 
 def test_llm_relationships_use_known_entities_and_add_metadata() -> None:
     cfg = Config.from_yaml("config/config.yaml")
-    pipeline = IngestionPipeline(cfg)
-    fake_extractor = _FakeLLMExtractor()
-    pipeline.llm_extractor = fake_extractor
 
-    chunk = _Chunk(
-        chunk_id="c2",
-        document_id="doc-1",
-        content="The battery depends on the solar array for charging.",
-        metadata={
-            "document_title": "Power",
-            "section_title": "EPS",
-            "llm_entities": [{"name": "battery", "type": "COMPONENT"}],
-            "spacy_entities": [{"text": "solar array", "label": "COMPONENT"}],
-        },
-    )
+    with MagicMock() as mock_embedder:
+        stage = ExtractionStage(cfg)
+        fake_extractor = _FakeLLMExtractor()
+        stage.llm_extractor = fake_extractor
+        stage.embeddings = mock_embedder
+        stage.spacy_extractor = MagicMock()
 
-    count = pipeline._extract_llm_relationships([chunk])
+        chunk = _Chunk(
+            chunk_id="c2",
+            document_id="doc-1",
+            content="The battery depends on the solar array for charging.",
+            metadata={
+                "document_title": "Power",
+                "section_title": "EPS",
+                "llm_entities": [{"name": "battery", "type": "COMPONENT"}],
+                "spacy_entities": [{"text": "solar array", "label": "COMPONENT"}],
+            },
+        )
 
-    assert count == 1
-    llm_relationships = chunk.metadata.get("llm_relationships", [])
-    assert len(llm_relationships) == 1
-    rel = llm_relationships[0]
-    assert rel["source"] == "battery"
-    assert rel["target"] == "solar_array"
-    assert rel["type"] == "DEPENDS_ON"
-    assert len(fake_extractor.relationship_known_entities) == 2
+        context = PipelineContext(file_path=Path("dummy"), config=cfg)
+
+        count = stage._extract_llm_relationships([chunk], context)
+
+        assert count == 1
+        llm_relationships = chunk.metadata.get("llm_relationships", [])
+        assert len(llm_relationships) == 1
+        rel = llm_relationships[0]
+        assert rel["source"] == "battery"
+        assert rel["target"] == "solar_array"
+        assert rel["type"] == "DEPENDS_ON"
+        assert len(fake_extractor.relationship_known_entities) == 2
