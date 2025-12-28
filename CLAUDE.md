@@ -199,6 +199,13 @@ docker-compose down -v
 
 ## Architecture
 
+### Pipeline Architecture
+
+The system uses a **stage-based pipeline pattern** (`src/pipeline/base.py`):
+- `PipelineStage`: Abstract base class for individual processing stages
+- `PipelineContext`: Pydantic model carrying state between stages (file path, parsed document, chunks, embeddings, stats)
+- `Pipeline`: Orchestrator that runs stages sequentially, with early exit on skip/error
+
 ### Pipeline Flow
 The ingestion pipeline (`src/pipeline/ingestion_pipeline.py`) orchestrates:
 1. **PDF Parsing** (Docling with OCR) or text file parsing
@@ -226,7 +233,7 @@ The ingestion pipeline (`src/pipeline/ingestion_pipeline.py`) orchestrates:
 
 **Curation Flow**:
 - Extraction creates `EntityCandidate` and `RelationshipCandidate` nodes in Neo4j
-- Each candidate has `status` (pending/approved/rejected/merged), `candidate_key` (deterministic ID), provenance tracking
+- Each candidate has `status` (PENDING/APPROVED/REJECTED/INACTIVE/MERGED_INTO_ENTITY), `candidate_key` (deterministic ID), provenance tracking
 - Review interface (`ragagent-review` or `ragagent-review-interactive`) allows manual approval/rejection/merging
 - Approved candidates can be promoted to actual Entity nodes
 
@@ -245,7 +252,11 @@ src/
 ├── extraction/          # Entity and relationship extraction
 │   ├── spacy_extractor.py    # Pattern + NER extraction
 │   ├── llm_extractor.py      # LLM-based extraction
-│   └── entity_merger.py      # Cross-extractor merging
+│   ├── entity_merger.py      # Cross-extractor merging
+│   ├── dependency_extractor.py  # Syntactic relationship extraction
+│   ├── pattern_extractor.py     # Rule-based relationships
+│   ├── relationship_validator.py # Post-extraction filtering
+│   └── models.py             # Pydantic schemas for extraction
 │
 ├── normalization/       # Entity deduplication and normalization
 │   ├── string_normalizer.py  # Text normalization
@@ -274,15 +285,27 @@ src/
 │   ├── query_parser.py       # Natural language query analysis
 │   ├── vector_retriever.py   # Qdrant-based semantic search
 │   ├── graph_retriever.py    # Neo4j graph traversal
-│   └── hybrid_retriever.py   # Combined retrieval strategy
+│   ├── hybrid_retriever.py   # Combined retrieval strategy
+│   ├── reranker.py           # Result reranking
+│   ├── response_generator.py # LLM answer generation
+│   ├── research_agent.py     # Iterative deep research
+│   └── models.py             # Result schemas
 │
 ├── pipeline/            # Orchestration
+│   ├── base.py               # Pipeline/PipelineStage abstractions
 │   ├── ingestion_pipeline.py # Main document processing pipeline
-│   └── discovery_pipeline.py # Entity discovery and analysis
+│   ├── discovery_pipeline.py # Entity discovery and analysis
+│   ├── update_pipeline.py    # Incremental updates
+│   └── stages/               # Individual pipeline stages
+│       ├── parsing.py, checkpoint.py, cleaning.py, chunking.py
+│       ├── extraction.py, embedding.py, storage.py
 │
 └── utils/               # Shared utilities
     ├── config.py             # Configuration management
-    ├── embeddings.py         # Embedding generation
+    ├── embeddings.py         # Embedding generation (fastembed)
+    ├── llm_client.py         # LLM provider abstraction
+    ├── candidate_keys.py     # Deterministic key generation
+    ├── progress.py           # Progress tracking
     └── logger.py             # Logging setup
 ```
 
