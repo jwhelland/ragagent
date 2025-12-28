@@ -461,6 +461,12 @@ class EntityCurationService:
 
         self.manager.update_entity(entity_id, merged_props)
 
+        # Create MENTIONED_IN relationships for new source documents
+        # update_entity() only sets properties; it does NOT create graph edges
+        docs_to_link = new_docs - current_docs
+        if docs_to_link:
+            self.manager.create_mentioned_in_relationships(entity_id, list(docs_to_link))
+
         # Update embeddings for the modified entity
         try:
             # We need to reconstruct the entity object or fetch it to re-embed

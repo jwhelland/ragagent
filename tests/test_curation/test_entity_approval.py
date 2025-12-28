@@ -24,6 +24,7 @@ class _FakeManager:
         self.candidate_updates: List[Dict[str, Any]] = []
         self.relationship_upserts: List[Dict[str, Any]] = []
         self.relationship_candidate_rows: List[Dict[str, Any]] = []
+        self.mentioned_in_relationships: List[Tuple[str, List[str]]] = []
 
     def upsert_entity(self, entity) -> str:  # type: ignore[override]
         self.entity_upserts.append(entity.model_dump())
@@ -82,6 +83,12 @@ class _FakeManager:
                 return True
         self.entity_upserts.append({"id": entity_id, **properties})  # simplified tracking
         return True
+
+    def create_mentioned_in_relationships(
+        self, entity_id: str, document_ids: List[str]
+    ) -> int:
+        self.mentioned_in_relationships.append((entity_id, list(document_ids)))
+        return len(document_ids)
 
 
 def _candidate(**kwargs: Any) -> EntityCandidate:
@@ -257,3 +264,38 @@ def test_approve_promotes_resolved_relationship_candidates(tmp_path: Path) -> No
     assert manager.relationship_status_updates == [("relcand-1", CandidateStatus.APPROVED)]
     assert manager.relationship_upserts[0]["source_entity_id"] == entity_id
     assert manager.relationship_upserts[0]["target_entity_id"] == "ent-b"
+
+
+def test_merge_candidate_into_entity_creates_mentioned_in_relationships(tmp_path: Path) -> None:
+    """Verify that merging a candidate creates MENTIONED_IN edges for new documents.
+
+    This tests the fix for the critical issue where merge_candidate_into_entity()
+    was not creating MENTIONED_IN relationships for cross-document mentions.
+    """
+    manager = _FakeManager()
+    table = NormalizationTable(table_path=tmp_path / "norm.json")
+    service = EntityCurationService(
+        manager, table, Config(), undo_stack_path=tmp_path / "undo.json"
+    )
+
+    # Create a candidate from a NEW document (new-doc-1, new-doc-2)
+    # The existing entity already has "old-doc" (see _FakeManager.get_entity)
+    candidate = _candidate(
+        candidate_key="cand-cross-doc",
+        canonical_name="Cross Doc Entity",
+        aliases=["CDE"],
+        mention_count=3,
+        source_documents=["new-doc-1", "new-doc-2", "old-doc"],  # includes overlap
+        chunk_ids=["new-chunk-1"],
+    )
+    target_entity_id = "existing-entity-1"
+
+    success = service.merge_candidate_into_entity(target_entity_id, candidate)
+    assert success is True
+
+    # Verify MENTIONED_IN relationships were created for NEW documents only
+    assert len(manager.mentioned_in_relationships) == 1
+    entity_id, doc_ids = manager.mentioned_in_relationships[0]
+    assert entity_id == target_entity_id
+    # Should contain new-doc-1 and new-doc-2, but NOT old-doc (already linked)
+    assert set(doc_ids) == {"new-doc-1", "new-doc-2"}

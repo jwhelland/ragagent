@@ -1066,6 +1066,48 @@ class Neo4jManager:
                 return True
             return False
 
+    def create_mentioned_in_relationships(
+        self, entity_id: str, document_ids: List[str]
+    ) -> int:
+        """Create MENTIONED_IN relationships between an entity and documents.
+
+        This is used when merging candidates into existing entities to ensure
+        cross-document mentions are properly linked in the graph.
+
+        Args:
+            entity_id: Entity ID
+            document_ids: List of document IDs to link
+
+        Returns:
+            Number of relationships created
+        """
+        if not document_ids:
+            return 0
+
+        with self.session() as session:
+            query = """
+            MATCH (n {id: $entity_id})
+            WHERE any(label IN labels(n) WHERE label IN $entity_types)
+            WITH n
+            UNWIND $doc_ids AS doc_id
+            MERGE (d:DOCUMENT {id: doc_id})
+            MERGE (n)-[r:MENTIONED_IN]->(d)
+            RETURN count(r) as created
+            """
+            result = session.run(
+                query,
+                entity_id=entity_id,
+                doc_ids=document_ids,
+                entity_types=[et.value for et in EntityType],
+            )
+            record = result.single()
+            created = int(record["created"]) if record else 0
+            if created > 0:
+                logger.debug(
+                    f"Created {created} MENTIONED_IN relationships for entity {entity_id}"
+                )
+            return created
+
     def delete_entity(self, entity_id: str) -> bool:
         """Delete an entity node and its relationships.
 
