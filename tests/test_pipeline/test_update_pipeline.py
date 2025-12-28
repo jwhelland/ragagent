@@ -146,10 +146,11 @@ def test_detect_changes_moved_file(update_pipeline, mock_neo4j, tmp_path):
 
     report = update_pipeline.detect_changes(tmp_path, extensions=[".pdf"])
 
-    # Should detect as UNCHANGED (content-wise)
-    assert len(report.unchanged_files) == 1
-    assert report.unchanged_files[0].path == str(new_path.resolve())
-    assert report.unchanged_files[0].document_id == "doc1"
+    # Should detect as RENAMED (content-wise same, path changed)
+    assert len(report.renamed_files) == 1
+    assert report.renamed_files[0].path == str(new_path.resolve())
+    assert report.renamed_files[0].document_id == "doc1"
+    assert report.renamed_files[0].old_path == str(old_path.resolve())
 
     # Should NOT detect as deleted (because doc1 was claimed by new path)
     assert len(report.deleted_files) == 0
@@ -173,24 +174,12 @@ def test_detect_changes_renamed_file_same_folder(update_pipeline, mock_neo4j, tm
 
     report = update_pipeline.detect_changes(tmp_path, extensions=[".pdf"])
 
-    # In this case, filename DOES NOT match. Path DOES NOT match.
-    # So we can't link them easily without an exhaustive O(N*M) checksum comparison or a reverse index.
-    # Current implementation only checks:
-    # 1. Exact path match
-    # 2. Filename match
+    # Now we support content-based rename detection.
 
-    # So this should be detected as:
-    # 1. NEW file (doc_renamed.pdf)
-    # 2. DELETED file (doc.pdf)
+    assert len(report.renamed_files) == 1
+    assert report.renamed_files[0].path == str(new_path.resolve())
+    assert report.renamed_files[0].document_id == "doc1"
+    assert report.renamed_files[0].old_path == str(old_path.resolve())
 
-    # This is acceptable for Phase 5.1. Smart content-based move detection (O(N) lookup map)
-    # could be an enhancement if we mapped Checksum -> DocumentID globally.
-
-    # NOTE: If we want to support this, we'd need a map `db_by_checksum`.
-    # Let's assert the current behavior (Split into New + Deleted).
-
-    assert len(report.new_files) == 1
-    assert report.new_files[0].path == str(new_path.resolve())
-
-    assert len(report.deleted_files) == 1
-    assert report.deleted_files[0].path == str(old_path.resolve())
+    assert len(report.new_files) == 0
+    assert len(report.deleted_files) == 0

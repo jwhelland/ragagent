@@ -82,10 +82,10 @@ Refactor `IngestionPipeline` to be a thin wrapper around the new `Pipeline` clas
 
 ---
 
-## 3. Robust Incremental Updates
+## 3. Robust Incremental Updates [DONE]
 **Goal:** Ensure document identity allows for file renames without data duplication or loss.
 
-### Task 3.1: Content-Based Hashing
+### Task 3.1: Content-Based Hashing [DONE]
 Switch from purely file-path based identity to content-based identity.
 
 -   **File:** `src/pipeline/update_pipeline.py`
@@ -100,7 +100,7 @@ Switch from purely file-path based identity to content-based identity.
             -   If neither matches -> **NEW**.
             -   If DB doc has no checksum match on disk -> **DELETED**.
 
-### Task 3.2: Verify Update Logic
+### Task 3.2: Verify Update Logic [DONE]
 Add a test case specifically for the "Rename" scenario to ensure it updates the path metadata without triggering a costly re-extraction.
 
 ---

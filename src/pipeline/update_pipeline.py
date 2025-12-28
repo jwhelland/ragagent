@@ -19,9 +19,12 @@ class FileState(BaseModel):
 
     path: str = Field(..., description="Absolute path to the file")
     checksum: str = Field(..., description="SHA-256 checksum of the file")
-    status: str = Field(..., description="Status: 'new', 'modified', 'deleted', 'unchanged'")
+    status: str = Field(
+        ..., description="Status: 'new', 'modified', 'deleted', 'unchanged', 'renamed'"
+    )
     document_id: Optional[str] = Field(None, description="Existing document ID if known")
     last_ingested_at: Optional[str] = Field(None, description="Last ingestion timestamp")
+    old_path: Optional[str] = Field(None, description="Previous path if renamed")
 
     @property
     def filename(self) -> str:
@@ -35,10 +38,13 @@ class ChangeReport(BaseModel):
     modified_files: List[FileState] = []
     deleted_files: List[FileState] = []
     unchanged_files: List[FileState] = []
+    renamed_files: List[FileState] = []
 
     @property
     def has_changes(self) -> bool:
-        return bool(self.new_files or self.modified_files or self.deleted_files)
+        return bool(
+            self.new_files or self.modified_files or self.deleted_files or self.renamed_files
+        )
 
     def summary(self) -> str:
         """Return a human-readable summary of changes."""
@@ -46,6 +52,7 @@ class ChangeReport(BaseModel):
             f"Change Report: {len(self.new_files)} new, "
             f"{len(self.modified_files)} modified, "
             f"{len(self.deleted_files)} deleted, "
+            f"{len(self.renamed_files)} renamed, "
             f"{len(self.unchanged_files)} unchanged."
         )
 
@@ -74,6 +81,7 @@ class UpdatePipeline:
             "new": 0,
             "modified": 0,
             "deleted": 0,
+            "renamed": 0,
             "failed": 0,
             "unchanged": len(report.unchanged_files),
         }
@@ -94,7 +102,24 @@ class UpdatePipeline:
             else:
                 stats["failed"] += 1
 
-        # 2. Handle Modified Files
+        # 2. Handle Renamed Files
+        for file_state in report.renamed_files:
+            if dry_run:
+                logger.info(
+                    f"[DRY RUN] Would rename document {file_state.document_id} from {file_state.old_path} to {file_state.path}"
+                )
+                stats["renamed"] += 1
+                continue
+
+            logger.info(
+                f"Renaming document {file_state.document_id} from {file_state.old_path} to {file_state.path}"
+            )
+            if self._rename_document(file_state.document_id, file_state.path):
+                stats["renamed"] += 1
+            else:
+                stats["failed"] += 1
+
+        # 3. Handle Modified Files
         for file_state in report.modified_files:
             if dry_run:
                 logger.info(f"[DRY RUN] Would update modified document: {file_state.path}")
@@ -109,7 +134,7 @@ class UpdatePipeline:
             else:
                 stats["failed"] += 1
 
-        # 3. Handle New Files
+        # 4. Handle New Files
         for file_state in report.new_files:
             if dry_run:
                 logger.info(f"[DRY RUN] Would ingest new document: {file_state.path}")
@@ -124,6 +149,27 @@ class UpdatePipeline:
                 stats["failed"] += 1
 
         return stats
+
+    def _rename_document(self, document_id: Optional[str], new_path: str) -> bool:
+        """Update the file_path of a document in Neo4j."""
+        if not document_id:
+            return False
+
+        try:
+            self.neo4j_manager.connect()
+            # We need to expose a method to update document properties or run a cypher query
+            # For now, I'll assume we can use execute_query or similar
+            query = "MATCH (d:Document {id: $id}) SET d.file_path = $new_path, d.filename = $filename RETURN d"
+            filename = Path(new_path).name
+            self.neo4j_manager.query(
+                query, {"id": document_id, "new_path": new_path, "filename": filename}
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to rename document {document_id}: {e}")
+            return False
+        finally:
+            self.neo4j_manager.close()
 
     def _delete_document(self, document_id: Optional[str]) -> bool:
         """Delete document and its chunks from all databases."""
@@ -197,20 +243,22 @@ class UpdatePipeline:
         finally:
             self.neo4j_manager.close()
 
-        # Map DB docs by file_path (if available) and filename
+        # Map DB docs
         db_by_path: Dict[str, Dict] = {}
-        db_by_filename: Dict[str, List[Dict]] = {}  # Handle duplicates
+        db_by_checksum: Dict[str, List[Dict]] = (
+            {}
+        )  # Map checksum to list of docs (duplicates possible)
 
         for doc in db_docs:
             fpath = doc.get("file_path")
             if fpath:
                 db_by_path[fpath] = doc
 
-            fname = doc.get("filename")
-            if fname:
-                if fname not in db_by_filename:
-                    db_by_filename[fname] = []
-                db_by_filename[fname].append(doc)
+            checksum = doc.get("checksum")
+            if checksum:
+                if checksum not in db_by_checksum:
+                    db_by_checksum[checksum] = []
+                db_by_checksum[checksum].append(doc)
 
         # 3. Classify files
         report = ChangeReport()
@@ -218,9 +266,6 @@ class UpdatePipeline:
 
         # Check Local Files against DB
         for path, checksum in local_files.items():
-            path_obj = Path(path)
-            filename = path_obj.name
-
             # Match by Exact Path first
             if path in db_by_path:
                 doc = db_by_path[path]
@@ -245,38 +290,42 @@ class UpdatePipeline:
                     report.modified_files.append(state)
                 continue
 
-            # Match by Filename (fallback if path match failed)
-            potential_matches = db_by_filename.get(filename, [])
+            # Match by Checksum (Rename Detection)
+            potential_matches = db_by_checksum.get(checksum, [])
 
-            # Simple heuristic: if we find a match with same checksum, assume it's the same file
-            found_match = False
+            # Find a match that hasn't been claimed yet
+            found_match = None
             for doc in potential_matches:
-                if doc.get("checksum") == checksum:
-                    # Content matches! It's likely this file
-                    doc_id = doc.get("id")
-                    if doc_id:
-                        claimed_doc_ids.add(doc_id)
-
-                    state = FileState(
-                        path=path,
-                        checksum=checksum,
-                        status="unchanged",  # Content is same
-                        document_id=doc_id,
-                        last_ingested_at=doc.get("last_ingested_at"),
-                    )
-                    report.unchanged_files.append(state)
-                    found_match = True
+                if doc.get("id") not in claimed_doc_ids:
+                    found_match = doc
                     break
 
-            if not found_match:
+            if found_match:
+                # Same content, different path -> RENAME
+                doc_id = found_match.get("id")
+                claimed_doc_ids.add(doc_id)
+
+                state = FileState(
+                    path=path,
+                    checksum=checksum,
+                    status="renamed",
+                    document_id=doc_id,
+                    last_ingested_at=found_match.get("last_ingested_at"),
+                    old_path=found_match.get("file_path"),
+                )
+                report.renamed_files.append(state)
+            else:
+                # No path match, no checksum match (or all checksum matches taken) -> NEW
                 report.new_files.append(FileState(path=path, checksum=checksum, status="new"))
 
         # Check for Deleted Files
         # A file is deleted if it's in DB but not in the scanned local_files
-        # AND it belongs to one of the search_paths (to avoid marking unrelated docs as deleted)
+        # AND it belongs to one of the search_paths
+        # AND it hasn't been claimed (renamed)
 
         for doc in db_docs:
-            if doc.get("id") in claimed_doc_ids:
+            doc_id = doc.get("id")
+            if doc_id in claimed_doc_ids:
                 continue
 
             db_path = doc.get("file_path")
@@ -294,7 +343,9 @@ class UpdatePipeline:
                 except ValueError:
                     continue
 
-            if in_scope and db_path not in local_files:
+            if in_scope:
+                # If we are here, it means the file at db_path is gone
+                # AND we didn't find its content elsewhere (rename).
                 report.deleted_files.append(
                     FileState(
                         path=db_path,
