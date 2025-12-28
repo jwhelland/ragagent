@@ -62,6 +62,37 @@ class CheckpointStage(PipelineStage):
                 )
                 self._cleanup_document_chunks(parsed_doc.document_id)
 
+            # Check for outdated versions of the same file (same path, different ID)
+            # This handles file updates where content change = new ID
+            file_path = parsed_doc.metadata.get("file_path")
+            if file_path:
+                try:
+                    # Find other documents with this file path
+                    query = """
+                    MATCH (d:DOCUMENT)
+                    WHERE d.file_path = $file_path AND d.id <> $current_id
+                    RETURN d.id as id
+                    """
+                    results = self.neo4j_manager.execute_cypher(
+                        query, {"file_path": file_path, "current_id": parsed_doc.document_id}
+                    )
+
+                    for record in results:
+                        old_doc_id = record["id"]
+                        logger.info(
+                            f"Detected outdated document version {old_doc_id} for path {file_path}. Cleaning up."
+                        )
+                        # Delete the old document entirely
+                        self.neo4j_manager.delete_document(old_doc_id)
+                        # Also clean up Qdrant chunks for the old ID
+                        try:
+                            self.qdrant_manager.delete_chunks_by_document(old_doc_id)
+                        except Exception as e:
+                            logger.warning(f"Qdrant cleanup failed for old document {old_doc_id}: {e}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to check for outdated document versions: {e}")
+
         # Mark document as ingesting
         self._upsert_document_status(parsed_doc, status="ingesting")
         return context
