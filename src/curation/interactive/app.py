@@ -47,6 +47,7 @@ from src.curation.interactive.widgets import (
 from src.curation.interactive.widgets.relationship_detail_panel import RelationshipDetailPanel
 from src.normalization.normalization_table import NormalizationTable
 from src.storage.neo4j_manager import Neo4jManager
+from src.storage.qdrant_manager import QdrantManager
 from src.storage.schemas import (
     CandidateStatus,
     EntityCandidate,
@@ -54,6 +55,7 @@ from src.storage.schemas import (
     RelationshipCandidate,
 )
 from src.utils.config import Config, load_config
+from src.utils.embeddings import EmbeddingGenerator
 
 
 class LoadingMessage(Static):
@@ -657,10 +659,16 @@ class ReviewApp(App):
         manager = Neo4jManager(self.config.database)
         manager.connect()
 
+        # Initialize embedding and vector storage
+        embedding_generator = EmbeddingGenerator(config=self.config.database)
+        qdrant_manager = QdrantManager(config=self.config.database)
+
         return EntityCurationService(
             manager=manager,
             normalization_table=norm_table,
             config=self.config,
+            embedding_generator=embedding_generator,
+            qdrant_manager=qdrant_manager,
         )
 
     # Selection management methods

@@ -14,8 +14,10 @@ from src.retrieval.graph_retriever import (
 )
 from src.retrieval.query_parser import EntityMention, ParsedQuery, QueryIntent
 from src.storage.neo4j_manager import Neo4jManager
+from src.storage.qdrant_manager import QdrantManager
 from src.storage.schemas import EntityType, RelationshipType
 from src.utils.config import Config
+from src.utils.embeddings import EmbeddingGenerator
 
 
 @pytest.fixture
@@ -41,9 +43,33 @@ def mock_neo4j() -> Mock:
 
 
 @pytest.fixture
-def graph_retriever(config: Config, mock_neo4j: Mock) -> GraphRetriever:
-    """Create graph retriever with mock Neo4j."""
-    return GraphRetriever(config=config, neo4j_manager=mock_neo4j)
+def mock_qdrant() -> Mock:
+    """Create mock Qdrant manager."""
+    qdrant = Mock(spec=QdrantManager)
+    qdrant.search_entities.return_value = []
+    return qdrant
+
+
+@pytest.fixture
+def mock_embedding_generator() -> Mock:
+    """Create mock embedding generator."""
+    generator = Mock(spec=EmbeddingGenerator)
+    # Return a dummy vector
+    generator.generate_single.return_value = Mock(tolist=lambda: [0.1] * 384)
+    return generator
+
+
+@pytest.fixture
+def graph_retriever(
+    config: Config, mock_neo4j: Mock, mock_qdrant: Mock, mock_embedding_generator: Mock
+) -> GraphRetriever:
+    """Create graph retriever with mock managers."""
+    return GraphRetriever(
+        config=config,
+        neo4j_manager=mock_neo4j,
+        qdrant_manager=mock_qdrant,
+        embedding_generator=mock_embedding_generator,
+    )
 
 
 @pytest.fixture
@@ -105,18 +131,39 @@ def sample_related_entity() -> Dict[str, Any]:
 class TestGraphRetrieverInitialization:
     """Tests for GraphRetriever initialization."""
 
-    def test_init_with_config(self, config: Config, mock_neo4j: Mock) -> None:
+    def test_init_with_config(
+        self, config: Config, mock_neo4j: Mock, mock_qdrant: Mock, mock_embedding_generator: Mock
+    ) -> None:
         """Test initialization with configuration."""
-        retriever = GraphRetriever(config=config, neo4j_manager=mock_neo4j)
+        retriever = GraphRetriever(
+            config=config,
+            neo4j_manager=mock_neo4j,
+            qdrant_manager=mock_qdrant,
+            embedding_generator=mock_embedding_generator,
+        )
         assert retriever.config is not None
         assert retriever.neo4j is mock_neo4j
+        assert retriever.qdrant_manager is mock_qdrant
+        assert retriever.embedding_generator is mock_embedding_generator
         assert retriever.graph_config is not None
 
     def test_init_with_defaults(self, mock_neo4j: Mock) -> None:
         """Test initialization with default configuration."""
-        retriever = GraphRetriever(neo4j_manager=mock_neo4j)
-        assert retriever.config is not None
-        assert retriever.graph_config.max_depth > 0
+        # Note: This test tries to instantiate real managers if not mocked.
+        # We can just verify that the properties are set.
+        # To avoid actual connection attempts that might fail if DBs aren't up (though they are in this env),
+        # we can mock the classes at the module level, but for now let's just assert.
+
+        # We'll use a mock for the components that might try to connect
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("src.retrieval.graph_retriever.QdrantManager", Mock())
+            mp.setattr("src.retrieval.graph_retriever.EmbeddingGenerator", Mock())
+
+            retriever = GraphRetriever(neo4j_manager=mock_neo4j)
+            assert retriever.config is not None
+            assert retriever.graph_config.max_depth > 0
+            assert retriever.qdrant_manager is not None
+            assert retriever.embedding_generator is not None
 
 
 class TestEntityResolution:
@@ -175,6 +222,8 @@ class TestEntityResolution:
         """Test entity resolution with no matches found."""
         mock_neo4j.get_entity_by_canonical_name.return_value = None
         mock_neo4j.search_entities.return_value = []
+        # Ensure Qdrant search also returns empty
+        graph_retriever.qdrant_manager.search_entities.return_value = []
 
         mention = EntityMention(
             text="Unknown System",
@@ -188,6 +237,43 @@ class TestEntityResolution:
         resolved = graph_retriever._resolve_entities([mention])
 
         assert len(resolved) == 0
+
+    def test_resolve_entity_vector_match(
+        self, graph_retriever: GraphRetriever, mock_neo4j: Mock, sample_entity: Dict[str, Any]
+    ) -> None:
+        """Test entity resolution with vector search fallback."""
+        mock_neo4j.get_entity_by_canonical_name.return_value = None
+        mock_neo4j.search_entities.return_value = []
+
+        # Mock Qdrant result
+        vector_match = {
+            "entity_id": sample_entity["id"],
+            "score": 0.88,
+            "payload": {
+                "canonical_name": sample_entity["canonical_name"],
+                "entity_type": sample_entity["entity_type"],
+                "description": sample_entity["description"],
+            },
+        }
+        graph_retriever.qdrant_manager.search_entities.return_value = [vector_match]
+
+        mention = EntityMention(
+            text="Electrical Setup",
+            normalized="electrical_setup",
+            entity_type=EntityType.SYSTEM,
+            start_char=0,
+            end_char=16,
+            confidence=0.8,
+        )
+
+        resolved = graph_retriever._resolve_entities([mention])
+
+        assert len(resolved) == 1
+        assert resolved[0].entity_id == sample_entity["id"]
+        assert resolved[0].match_method == "vector"
+        assert resolved[0].confidence == 0.88
+        assert graph_retriever.embedding_generator.generate_single.called
+        assert graph_retriever.qdrant_manager.search_entities.called
 
     def test_resolve_multiple_entities(
         self, graph_retriever: GraphRetriever, mock_neo4j: Mock, sample_entity: Dict[str, Any]

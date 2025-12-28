@@ -22,6 +22,7 @@ from src.normalization.normalization_table import (
 )
 from src.normalization.string_normalizer import StringNormalizer
 from src.storage.neo4j_manager import Neo4jManager
+from src.storage.qdrant_manager import QdrantManager
 from src.storage.schemas import (
     CandidateStatus,
     Entity,
@@ -36,6 +37,7 @@ from src.storage.schemas import (
 )
 from src.utils.candidate_keys import normalize_candidate_key_fragment
 from src.utils.config import Config
+from src.utils.embeddings import EmbeddingGenerator
 
 
 class NormalizationCheckpoint(BaseModel):
@@ -118,6 +120,8 @@ class EntityCurationService:
         config: Config | None = None,
         audit_path: Path | None = None,
         undo_stack_path: Path | None = None,
+        embedding_generator: EmbeddingGenerator | None = None,
+        qdrant_manager: QdrantManager | None = None,
     ) -> None:
         self.manager = manager
         self.normalization_table = normalization_table
@@ -129,6 +133,35 @@ class EntityCurationService:
             enabled=self.config.curation.enable_audit_trail,
         )
         self._string_normalizer = StringNormalizer(self.config.normalization)
+        self.embedding_generator = embedding_generator
+        self.qdrant_manager = qdrant_manager
+
+    def _embed_and_upsert_entity(self, entity: Entity) -> None:
+        """Generate embedding for entity and upsert to Qdrant."""
+        if not self.embedding_generator or not self.qdrant_manager:
+            return
+
+        try:
+            # Construct text representation: Canonical Name + Description + Aliases
+            text_parts = [entity.canonical_name]
+            if entity.description:
+                text_parts.append(entity.description)
+            if entity.aliases:
+                text_parts.extend(entity.aliases)
+
+            text_to_embed = ". ".join(text_parts)
+
+            # Generate embedding
+            embedding = self.embedding_generator.generate_single(text_to_embed)
+
+            # Upsert to Qdrant
+            self.qdrant_manager.upsert_entities(
+                entities=[entity.model_dump()],
+                vectors=[embedding.tolist()],
+            )
+            logger.debug(f"Upserted embedding for entity {entity.canonical_name}")
+        except Exception as e:
+            logger.error(f"Failed to embed/upsert entity {entity.canonical_name}: {e}")
 
     # Public API -----------------------------------------------------
     def approve_candidate(
@@ -137,6 +170,9 @@ class EntityCurationService:
         """Approve a candidate and promote it to a production Entity."""
         entity = self._entity_from_candidate(candidate, EntityStatus.APPROVED)
         entity_id = self.manager.upsert_entity(entity)
+        # Ensure entity_id is set on the object for embedding/upsert
+        entity.id = entity_id
+        self._embed_and_upsert_entity(entity)
 
         identifier = self._candidate_identifier(candidate)
         previous_status = candidate.status
@@ -266,6 +302,8 @@ class EntityCurationService:
             properties={"chunk_ids": sorted(set(chunk_ids)), "display_name": name},
         )
         entity_id = self.manager.upsert_entity(entity)
+        entity.id = entity_id
+        self._embed_and_upsert_entity(entity)
 
         normalization_changes = self._upsert_normalization_entries(
             entity_id=entity_id,
@@ -331,6 +369,8 @@ class EntityCurationService:
             },
         )
         entity_id = self.manager.upsert_entity(entity)
+        entity.id = entity_id
+        self._embed_and_upsert_entity(entity)
 
         previous_statuses = []
         for candidate in all_candidates:
@@ -420,6 +460,20 @@ class EntityCurationService:
             )
 
         self.manager.update_entity(entity_id, merged_props)
+
+        # Update embeddings for the modified entity
+        try:
+            # We need to reconstruct the entity object or fetch it to re-embed
+            # For efficiency, we can construct a partial object if we have enough data,
+            # or just fetch the updated one.
+            updated_entity_data = self.manager.get_entity(entity_id)
+            if updated_entity_data:
+                # Need to convert dict to Entity model to use the helper
+                # Note: get_entity returns a dict
+                updated_entity = Entity(**updated_entity_data)
+                self._embed_and_upsert_entity(updated_entity)
+        except Exception as e:
+            logger.warning(f"Failed to update embedding for merged entity {entity_id}: {e}")
 
         # 2. Update candidate status
         identifier = self._candidate_identifier(candidate)
@@ -575,6 +629,11 @@ class EntityCurationService:
             entity_id = action.entity_id
             if isinstance(entity_id, str):
                 self.manager.delete_entity(entity_id)
+                if self.qdrant_manager:
+                    try:
+                        self.qdrant_manager.delete_entities([entity_id])
+                    except Exception as e:
+                        logger.warning(f"Failed to delete entity {entity_id} from Qdrant: {e}")
 
             for checkpoint in action.candidate_statuses:
                 self.manager.update_entity_candidate_status(
@@ -598,6 +657,17 @@ class EntityCurationService:
             previous_values = action.previous_values
             if isinstance(entity_id, str) and previous_values:
                 self.manager.update_entity(entity_id, previous_values)
+                # Re-embed the entity with previous values to revert Qdrant state
+                try:
+                    # We might need to fetch the full entity again to be safe,
+                    # but if previous_values contains the critical text fields, we might be okay.
+                    # Best to fetch the restored entity from Neo4j to be sure.
+                    restored_entity_data = self.manager.get_entity(entity_id)
+                    if restored_entity_data and self.embedding_generator and self.qdrant_manager:
+                        restored_entity = Entity(**restored_entity_data)
+                        self._embed_and_upsert_entity(restored_entity)
+                except Exception as e:
+                    logger.warning(f"Failed to revert embedding for entity {entity_id}: {e}")
 
             for checkpoint in action.candidate_statuses:
                 self.manager.update_entity_candidate_status(
@@ -645,6 +715,11 @@ class EntityCurationService:
             entity_id = action.entity_id
             if isinstance(entity_id, str):
                 self.manager.delete_entity(entity_id)
+                if self.qdrant_manager:
+                    try:
+                        self.qdrant_manager.delete_entities([entity_id])
+                    except Exception as e:
+                        logger.warning(f"Failed to delete entity {entity_id} from Qdrant: {e}")
 
             for checkpoint in action.normalization_changes:
                 if checkpoint.previous_record:

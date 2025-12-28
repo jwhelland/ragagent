@@ -22,8 +22,10 @@ from src.normalization.normalization_table import (
     NormalizationTable,
 )
 from src.storage.neo4j_manager import Neo4jManager
+from src.storage.qdrant_manager import QdrantManager
 from src.storage.schemas import CandidateStatus, EntityCandidate, EntityType
 from src.utils.config import Config, load_config
+from src.utils.embeddings import EmbeddingGenerator
 
 app = typer.Typer(help="Review and search entity candidates.")
 normalization_app = typer.Typer(help="Review and search normalization mappings.")
@@ -126,7 +128,14 @@ def _create_curation_service(
     table = _load_normalization_table(cfg, table_path)
     manager = Neo4jManager(cfg.database)
     manager.connect()
-    service = EntityCurationService(manager, table, cfg)
+
+    # Initialize embedding and vector storage
+    embedding_generator = EmbeddingGenerator(config=cfg.database)
+    qdrant_manager = QdrantManager(config=cfg.database)
+
+    service = EntityCurationService(
+        manager, table, cfg, embedding_generator=embedding_generator, qdrant_manager=qdrant_manager
+    )
     return service, table, manager
 
 

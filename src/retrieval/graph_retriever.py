@@ -23,8 +23,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.retrieval.query_parser import EntityMention, ParsedQuery
 from src.storage.neo4j_manager import Neo4jManager
+from src.storage.qdrant_manager import QdrantManager
 from src.storage.schemas import EntityType, RelationshipType
 from src.utils.config import Config, GraphSearchConfig
+from src.utils.embeddings import EmbeddingGenerator
 
 
 class TraversalStrategy(str, Enum):
@@ -101,12 +103,16 @@ class GraphRetriever:
         self,
         config: Optional[Config] = None,
         neo4j_manager: Optional[Neo4jManager] = None,
+        qdrant_manager: Optional[QdrantManager] = None,
+        embedding_generator: Optional[EmbeddingGenerator] = None,
     ) -> None:
         """Initialize graph retriever.
 
         Args:
             config: Configuration object
             neo4j_manager: Neo4j database manager (created if None)
+            qdrant_manager: Qdrant vector database manager (created if None)
+            embedding_generator: Embedding generator (created if None)
         """
         self.config = config or Config.from_yaml()
         self.graph_config: GraphSearchConfig = self.config.retrieval.graph_search
@@ -117,6 +123,18 @@ class GraphRetriever:
             self.neo4j.connect()
         else:
             self.neo4j = neo4j_manager
+
+        # Initialize Qdrant manager
+        if qdrant_manager is None:
+            self.qdrant_manager = QdrantManager(config=self.config.database)
+        else:
+            self.qdrant_manager = qdrant_manager
+
+        # Initialize Embedding generator
+        if embedding_generator is None:
+            self.embedding_generator = EmbeddingGenerator(config=self.config.database)
+        else:
+            self.embedding_generator = embedding_generator
 
         # Cache existing relationship types to avoid Neo4j warnings
         try:
@@ -295,7 +313,7 @@ class GraphRetriever:
         seen_ids: Set[str] = set()
 
         for mention in entity_mentions:
-            # Try exact match on canonical name first
+            # 1. Try exact match on canonical name
             entity_dict = self.neo4j.get_entity_by_canonical_name(
                 canonical_name=mention.normalized,
                 entity_type=mention.entity_type,
@@ -318,7 +336,7 @@ class GraphRetriever:
                     seen_ids.add(entity_dict["id"])
                 continue
 
-            # Try full-text search if exact match fails
+            # 2. Try full-text search if exact match fails
             search_results = self.neo4j.search_entities(
                 query=mention.text,
                 entity_types=[mention.entity_type] if mention.entity_type else None,
@@ -326,8 +344,9 @@ class GraphRetriever:
             )
 
             # Take best match with sufficient score
+            fts_match_found = False
             for result in search_results:
-                if result.get("search_score", 0.0) >= 0.5:
+                if result.get("search_score", 0.0) >= 0.8:  # High confidence FTS threshold
                     if result["id"] not in seen_ids:
                         resolved.append(
                             ResolvedEntity(
@@ -342,7 +361,51 @@ class GraphRetriever:
                             )
                         )
                         seen_ids.add(result["id"])
+                        fts_match_found = True
                         break
+
+            if fts_match_found:
+                continue
+
+            # 3. Try semantic vector search if FTS confidence is low or no matches
+            try:
+                # Generate embedding for the mention
+                query_vector = self.embedding_generator.generate_single(mention.text)
+
+                # Search entities in Qdrant
+                vector_results = self.qdrant_manager.search_entities(
+                    query_vector=query_vector.tolist(),
+                    top_k=3,
+                    score_threshold=0.75,  # Threshold for semantic match
+                    entity_types=[mention.entity_type] if mention.entity_type else None,
+                )
+
+                for res in vector_results:
+                    # We have entity_id, but need full details.
+                    # Ideally Qdrant payload has what we need, or we fetch from Neo4j.
+                    # Payload: entity_id, canonical_name, entity_type, description, aliases
+                    payload = res.get("payload", {})
+                    entity_id = res["entity_id"]
+
+                    if entity_id not in seen_ids:
+                        resolved.append(
+                            ResolvedEntity(
+                                entity_id=entity_id,
+                                canonical_name=payload.get("canonical_name", ""),
+                                entity_type=EntityType(
+                                    payload.get("entity_type", EntityType.CONCEPT.value)
+                                ),
+                                mention_text=mention.text,
+                                confidence=res["score"],  # Use vector similarity score
+                                match_method="vector",
+                            )
+                        )
+                        seen_ids.add(entity_id)
+                        # We only take the top semantic match to avoid noise
+                        break
+
+            except Exception as e:
+                logger.warning(f"Vector search failed for mention '{mention.text}': {e}")
 
         logger.debug(
             "Resolved entities",

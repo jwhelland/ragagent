@@ -68,6 +68,9 @@ review: ## Launch non-interactive review CLI
 backfill-relationships: ## Promote RelationshipCandidates into graph edges
 	$(UV) run --offline python scripts/backfill_relationships.py
 
+backfill-embeddings: ## Backfill Qdrant entity embeddings from Neo4j entities
+	$(UV) run --offline python scripts/backfill_entity_embeddings.py
+
 cleanup-relationships: ## Bulk promote/reject pending relationships (see scripts/cleanup_relationships.py)
 	$(UV) run --offline python scripts/cleanup_relationships.py --help
 
