@@ -88,7 +88,9 @@ class CheckpointStage(PipelineStage):
                         try:
                             self.qdrant_manager.delete_chunks_by_document(old_doc_id)
                         except Exception as e:
-                            logger.warning(f"Qdrant cleanup failed for old document {old_doc_id}: {e}")
+                            logger.warning(
+                                f"Qdrant cleanup failed for old document {old_doc_id}: {e}"
+                            )
 
                 except Exception as e:
                     logger.warning(f"Failed to check for outdated document versions: {e}")

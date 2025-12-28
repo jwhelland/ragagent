@@ -1066,9 +1066,7 @@ class Neo4jManager:
                 return True
             return False
 
-    def create_mentioned_in_relationships(
-        self, entity_id: str, document_ids: List[str]
-    ) -> int:
+    def create_mentioned_in_relationships(self, entity_id: str, document_ids: List[str]) -> int:
         """Create MENTIONED_IN relationships between an entity and documents.
 
         This is used when merging candidates into existing entities to ensure
@@ -1103,9 +1101,7 @@ class Neo4jManager:
             record = result.single()
             created = int(record["created"]) if record else 0
             if created > 0:
-                logger.debug(
-                    f"Created {created} MENTIONED_IN relationships for entity {entity_id}"
-                )
+                logger.debug(f"Created {created} MENTIONED_IN relationships for entity {entity_id}")
             return created
 
     def delete_entity(self, entity_id: str) -> bool:

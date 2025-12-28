@@ -265,12 +265,39 @@ def load_known_entities(self) -> Dict[Tuple[str, str], str]:
 | Fix MENTIONED_IN gap in merge_candidate_into_entity | Low | ✅ Done |
 | Alias-aware lookup builder | Low | ✅ Done (2025-12-28) |
 | `auto-approve-existing` CLI command | Medium | ✅ Done (2025-12-28) |
+| `--resolve-existing` flag for discovery pipeline | Medium | ✅ Done (2025-12-28) |
+| `--resolve-existing` flag for ingestion pipeline | Medium | ✅ Done (2025-12-28) |
 | TUI check vs approved entities (TODO at line 113) | Medium | Pending |
 | SmartMergeView widget | High | Pending |
 
 ---
 
 ## Implementation Notes (2025-12-28)
+
+### Strategy 1 Implementation Complete
+
+**Files Modified:**
+- `src/pipeline/discovery_pipeline.py` - Added `AutoResolvedEntity` model, `resolve_existing` parameter to `DiscoveryParameters`, modified `_load_candidates()` to filter candidates, added `_determine_match_reason()` helper
+- `scripts/run_discovery.py` - Added `--resolve-existing` CLI flag
+- `tests/test_pipeline/test_discovery_pipeline.py` - Added 12 new tests for the functionality
+
+**Usage:**
+```bash
+# Run discovery with pre-resolution enabled
+uv run ragagent-discover --resolve-existing
+
+# Without pre-resolution (default behavior)
+uv run ragagent-discover
+```
+
+**Key Features:**
+- Reuses existing `ApprovedEntityLookup` class from batch_operations.py
+- Alias-aware matching: Matches candidate names/aliases against approved entity names/aliases
+- Type strictness: Only resolves when entity types match exactly
+- Audit trail: Tracks auto-resolved entities in report with match reason (canonical_name vs alias)
+- Report output: Auto-resolved entities appear in markdown and HTML reports
+
+---
 
 ### Strategy 2 Implementation Complete
 
@@ -297,3 +324,30 @@ uv run ragagent-review auto-approve-existing --limit 500 --no-dry-run
 - Safety: Skips candidates with `conflicting_types` (requires human review)
 - Dry-run default: Must explicitly use `--no-dry-run` to execute
 - Checkpoint/rollback: Uses existing undo infrastructure for atomic operations
+
+---
+
+### Strategy 1 (Ingestion Pipeline) Implementation Complete
+
+**Files Modified:**
+- `src/pipeline/ingestion_pipeline.py` - Added `resolve_existing` parameter to `__init__`, stats tracking for `entity_candidates_auto_resolved`, passed flag to `StorageStage`
+- `src/pipeline/stages/storage.py` - Added `resolve_existing` parameter, lazy-loaded `ApprovedEntityLookup`, filtering logic in `_store_entity_candidates()`, creates MENTIONED_IN relationships for auto-resolved candidates
+- `scripts/ingest_documents.py` - Added `--resolve-existing` CLI flag
+- `tests/test_pipeline/test_storage_stage.py` - Added 7 unit tests for the functionality
+
+**Usage:**
+```bash
+# Ingest with pre-resolution enabled
+uv run ragagent-ingest --directory data/raw --resolve-existing
+
+# Without pre-resolution (default behavior)
+uv run ragagent-ingest --directory data/raw
+```
+
+**Key Features:**
+- Reuses existing `ApprovedEntityLookup` class from batch_operations.py
+- Alias-aware matching: Matches candidate names/aliases against approved entity names/aliases
+- Type strictness: Only resolves when entity types match exactly
+- MENTIONED_IN relationships: Creates graph edges for cross-document mentions when auto-resolving
+- Lookup is lazy-loaded once on first use and cached for entire pipeline run
+- Statistics tracking: `entity_candidates_auto_resolved` count in pipeline stats

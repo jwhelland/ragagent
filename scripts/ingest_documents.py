@@ -129,6 +129,14 @@ def main():
         help="Topic to link the document(s) to (can be used multiple times)",
     )
 
+    parser.add_argument(
+        "--resolve-existing",
+        action="store_true",
+        default=False,
+        help="Auto-resolve entity candidates matching approved entities "
+        "(creates MENTIONED_IN relationships for cross-document linkage)",
+    )
+
     args = parser.parse_args()
 
     # Collect all paths to process
@@ -175,7 +183,9 @@ def main():
 
         # Initialize pipeline and components before health check so readiness is accurate
         logger.info("Initializing ingestion pipeline...")
-        pipeline = IngestionPipeline(config)
+        pipeline = IngestionPipeline(config, resolve_existing=args.resolve_existing)
+        if args.resolve_existing:
+            logger.info("Pre-resolution enabled: candidates matching approved entities will be auto-resolved")
         pipeline.initialize_components()
 
         # Check component health

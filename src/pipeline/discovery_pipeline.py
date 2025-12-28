@@ -24,6 +24,7 @@ from typing import Any, DefaultDict, Dict, Iterable, List, Mapping, Sequence, Se
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.curation.batch_operations import ApprovedEntityLookup, build_approved_entity_lookup
 from src.normalization.entity_deduplicator import EntityDeduplicator, EntityRecord
 from src.normalization.fuzzy_matcher import FuzzyMatcher
 from src.normalization.string_normalizer import StringNormalizer
@@ -99,6 +100,18 @@ class DiscoveryMergeSuggestion(BaseModel):
     reason: str
 
 
+class AutoResolvedEntity(BaseModel):
+    """Record of a candidate auto-resolved to an existing approved entity."""
+
+    model_config = ConfigDict(frozen=True)
+
+    candidate_key: str
+    candidate_name: str
+    candidate_type: str
+    matched_entity_id: str
+    match_reason: str  # "canonical_name" | "alias"
+
+
 class DiscoveryReport(BaseModel):
     """Serialized discovery report."""
 
@@ -114,6 +127,7 @@ class DiscoveryReport(BaseModel):
     cooccurrence_clusters: List[CooccurrenceCluster] = Field(default_factory=list)
     merge_suggestions: List[DiscoveryMergeSuggestion] = Field(default_factory=list)
     entity_type_suggestions: List[EntityTypeSuggestion] = Field(default_factory=list)
+    auto_resolved: List[AutoResolvedEntity] = Field(default_factory=list)
     artifacts: Dict[str, str] = Field(default_factory=dict)
 
     def to_markdown(self, *, candidate_names: Mapping[str, str] | None = None) -> str:
@@ -203,6 +217,22 @@ class DiscoveryReport(BaseModel):
             for suggestion in self.entity_type_suggestions[:25]:
                 examples = ", ".join(f"`{c}`" for c in suggestion.example_candidates[:5])
                 lines.append(f"- `{suggestion.label}`: {suggestion.occurrences} (e.g. {examples})")
+        if self.auto_resolved:
+            lines.append("")
+            lines.append("## Auto-Resolved Entities")
+            lines.append("")
+            lines.append(
+                f"**{len(self.auto_resolved)}** candidates were auto-resolved "
+                "to existing approved entities:"
+            )
+            lines.append("")
+            for resolved in self.auto_resolved[:50]:
+                lines.append(
+                    f"- `{resolved.candidate_name}` ({resolved.candidate_type}) "
+                    f"→ entity `{resolved.matched_entity_id}` ({resolved.match_reason})"
+                )
+            if len(self.auto_resolved) > 50:
+                lines.append(f"- ... and {len(self.auto_resolved) - 50} more")
         if self.artifacts:
             lines.append("")
             lines.append("## Artifacts")
@@ -342,6 +372,27 @@ class DiscoveryReport(BaseModel):
                 )
             html.append("</tbody></table>")
 
+        if self.auto_resolved:
+            html.append("<h2>Auto-Resolved Entities</h2>")
+            html.append(
+                f"<p><strong>{len(self.auto_resolved)}</strong> candidates were auto-resolved "
+                "to existing approved entities:</p>"
+            )
+            html.append(
+                "<table><thead><tr><th>Candidate</th><th>Type</th><th>Matched Entity</th>"
+                "<th>Match Reason</th></tr></thead><tbody>"
+            )
+            for resolved in self.auto_resolved[:100]:
+                html.append(
+                    f"<tr><td><code>{resolved.candidate_name}</code></td>"
+                    f"<td>{resolved.candidate_type}</td>"
+                    f"<td><code>{resolved.matched_entity_id}</code></td>"
+                    f"<td>{resolved.match_reason}</td></tr>"
+                )
+            html.append("</tbody></table>")
+            if len(self.auto_resolved) > 100:
+                html.append(f"<p>... and {len(self.auto_resolved) - 100} more</p>")
+
         html.extend(["</body>", "</html>"])
         return "\n".join(html)
 
@@ -365,6 +416,7 @@ class DiscoveryParameters:
     enable_semantic_merge: bool = False
     max_merge_suggestions: int = 100
     fuzzy_block_prefix: int = 4
+    resolve_existing: bool = False  # Strategy 1: auto-resolve candidates matching approved entities
 
 
 def _safe_log2(value: float) -> float:
@@ -756,7 +808,14 @@ class DiscoveryPipeline:
 
         if not getattr(self.neo4j_manager, "_connected", False):
             self.neo4j_manager.connect()
-        candidates = self._load_candidates(params)
+
+        # Strategy 1: Load approved entity lookup if resolve_existing is enabled
+        approved_lookup: ApprovedEntityLookup | None = None
+        if params.resolve_existing:
+            logger.info("Loading approved entity lookup for pre-resolution...")
+            approved_lookup = build_approved_entity_lookup(self.neo4j_manager)
+
+        candidates, auto_resolved = self._load_candidates(params, approved_lookup)
         candidate_names = {c.candidate_key: c.canonical_name for c in candidates}
 
         stats = self._compute_stats(candidates)
@@ -805,6 +864,8 @@ class DiscoveryPipeline:
                 "enable_semantic_merge": params.enable_semantic_merge,
                 "max_merge_suggestions": params.max_merge_suggestions,
                 "total_chunks_indexed": total_chunks,
+                "resolve_existing": params.resolve_existing,
+                "auto_resolved_count": len(auto_resolved),
             },
             totals=stats["totals"],
             by_type=stats["by_type"],
@@ -814,6 +875,7 @@ class DiscoveryPipeline:
             cooccurrence_clusters=clusters,
             merge_suggestions=merge_suggestions,
             entity_type_suggestions=type_suggestions,
+            auto_resolved=auto_resolved,
         )
 
         output_dir = Path(output_dir)
@@ -863,13 +925,29 @@ class DiscoveryPipeline:
         )
         return report
 
-    def _load_candidates(self, params: DiscoveryParameters) -> List[DiscoveryCandidate]:
+    def _load_candidates(
+        self,
+        params: DiscoveryParameters,
+        approved_lookup: ApprovedEntityLookup | None = None,
+    ) -> Tuple[List[DiscoveryCandidate], List[AutoResolvedEntity]]:
+        """Load entity candidates, optionally filtering out those matching approved entities.
+
+        Args:
+            params: Discovery parameters
+            approved_lookup: If provided, candidates matching approved entities will be
+                filtered out and tracked as auto-resolved (Strategy 1)
+
+        Returns:
+            Tuple of (candidates to analyze, auto-resolved entities)
+        """
         status_set = {s.lower() for s in params.statuses}
         type_set = {t.upper() for t in params.candidate_types} if params.candidate_types else None
 
         rows: list[dict[str, Any]] = []
+        auto_resolved: list[AutoResolvedEntity] = []
         offset = 0
         batch_size = 500
+
         while len(rows) < params.max_candidates:
             limit = min(batch_size, params.max_candidates - len(rows))
             batch = self.neo4j_manager.get_entity_candidates(
@@ -889,13 +967,79 @@ class DiscoveryPipeline:
                     continue
                 if type_set is not None and candidate_type not in type_set:
                     continue
+
+                # Strategy 1: Check if candidate matches an approved entity
+                if approved_lookup is not None:
+                    canonical_name = str(row.get("canonical_name", ""))
+                    aliases = row.get("aliases", []) or []
+
+                    entity_id = approved_lookup.find_match(
+                        name=canonical_name,
+                        entity_type=candidate_type,
+                        aliases=aliases,
+                    )
+
+                    if entity_id:
+                        # Determine match reason
+                        match_reason = self._determine_match_reason(
+                            canonical_name, aliases, entity_id, candidate_type, approved_lookup
+                        )
+                        auto_resolved.append(
+                            AutoResolvedEntity(
+                                candidate_key=row.get("candidate_key", ""),
+                                candidate_name=canonical_name,
+                                candidate_type=candidate_type,
+                                matched_entity_id=entity_id,
+                                match_reason=match_reason,
+                            )
+                        )
+                        logger.debug(
+                            "Auto-resolved candidate '{}' ({}) → entity '{}' ({})",
+                            canonical_name,
+                            candidate_type,
+                            entity_id,
+                            match_reason,
+                        )
+                        continue  # Skip this candidate
+
                 rows.append(row)
                 if len(rows) >= params.max_candidates:
                     break
 
         candidates = [DiscoveryCandidate(**row) for row in rows]
+
+        if auto_resolved:
+            logger.info(
+                "Auto-resolved {} candidates to existing approved entities",
+                len(auto_resolved),
+            )
+
         logger.info("Loaded {} candidates for discovery analysis", len(candidates))
-        return candidates
+        return candidates, auto_resolved
+
+    def _determine_match_reason(
+        self,
+        canonical_name: str,
+        aliases: List[str],
+        matched_entity_id: str,
+        entity_type: str,
+        lookup: ApprovedEntityLookup,
+    ) -> str:
+        """Determine how the candidate matched the approved entity."""
+        from src.curation.batch_operations import normalize_name
+
+        # Check if canonical name matched
+        key = (normalize_name(canonical_name), entity_type)
+        if key in lookup._lookup and lookup._lookup[key] == matched_entity_id:
+            return "canonical_name"
+
+        # Check which alias matched
+        for alias in aliases:
+            alias_key = (normalize_name(alias), entity_type)
+            if alias_key in lookup._lookup and lookup._lookup[alias_key] == matched_entity_id:
+                return f"alias:{alias}"
+
+        return "unknown"
 
     def _compute_stats(self, candidates: Sequence[DiscoveryCandidate]) -> Dict[str, Any]:
         totals = {

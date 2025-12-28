@@ -1,8 +1,11 @@
 import re
 from datetime import datetime
-from typing import Any, List
+from typing import TYPE_CHECKING, Any, List, Tuple
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from src.curation.batch_operations import ApprovedEntityLookup
 
 from src.normalization.string_normalizer import StringNormalizer
 from src.pipeline.base import PipelineContext, PipelineStage
@@ -23,12 +26,21 @@ from src.utils.candidate_keys import normalize_candidate_key_fragment
 class StorageStage(PipelineStage):
     """Stage for storing results in databases."""
 
-    def __init__(self, config, neo4j_manager: Neo4jManager, qdrant_manager: QdrantManager):
+    def __init__(
+        self,
+        config,
+        neo4j_manager: Neo4jManager,
+        qdrant_manager: QdrantManager,
+        *,
+        resolve_existing: bool = False,
+    ):
         super().__init__("Storage")
         self.config = config
         self.neo4j_manager = neo4j_manager
         self.qdrant_manager = qdrant_manager
         self.string_normalizer = StringNormalizer(config.normalization)
+        self.resolve_existing = resolve_existing
+        self._approved_lookup: ApprovedEntityLookup | None = None  # Lazy-loaded
 
     def run(self, context: PipelineContext) -> PipelineContext:
         if not context.parsed_document or not context.chunks:
@@ -44,10 +56,13 @@ class StorageStage(PipelineStage):
             )
 
         logger.debug("Storing extraction candidates")
-        entity_candidates_stored = self._store_entity_candidates(context.chunks)
+        entity_candidates_stored, entity_candidates_auto_resolved = self._store_entity_candidates(
+            context.chunks
+        )
         relationship_candidates_stored = self._store_relationship_candidates(context.chunks)
 
         context.update_stats("entity_candidates_stored", entity_candidates_stored)
+        context.update_stats("entity_candidates_auto_resolved", entity_candidates_auto_resolved)
         context.update_stats("relationship_candidates_stored", relationship_candidates_stored)
 
         # Mark document as completed
@@ -127,10 +142,29 @@ class StorageStage(PipelineStage):
             else:
                 self.neo4j_manager.create_chunk(graph_chunk)
 
-    def _store_entity_candidates(self, chunks: List[Any]) -> int:
+    def _store_entity_candidates(self, chunks: List[Any]) -> Tuple[int, int]:
+        """Store entity candidates, optionally resolving to approved entities.
+
+        When resolve_existing is enabled, candidates matching already-approved
+        entities are skipped, and MENTIONED_IN relationships are created instead
+        to preserve cross-document linkage.
+
+        Returns:
+            Tuple of (stored_count, auto_resolved_count)
+        """
         if not hasattr(self.neo4j_manager, "upsert_entity_candidate_aggregate"):
-            return 0
+            return 0, 0
+
+        # Lazy-load approved entity lookup if resolve_existing enabled
+        if self.resolve_existing and self._approved_lookup is None:
+            from src.curation.batch_operations import build_approved_entity_lookup
+
+            self._approved_lookup = build_approved_entity_lookup(self.neo4j_manager)
+            logger.info(f"Loaded {len(self._approved_lookup)} approved entities for pre-resolution")
+
         stored = 0
+        auto_resolved = 0
+
         for chunk in chunks:
             metadata = getattr(chunk, "metadata", {}) or {}
             merged = metadata.get("merged_entities") or []
@@ -151,17 +185,38 @@ class StorageStage(PipelineStage):
                 if not canonical_name:
                     continue
 
-                # We need normalize_candidate_key_fragment. It's not available here directly.
-                # I imported it above.
+                cand_type_str = (
+                    str(cand_type.value) if hasattr(cand_type, "value") else str(cand_type)
+                )
+                aliases = list(cand.get("aliases") or [])
 
-                # But I need StringNormalizer logic.
-                # I can create a temporary normalizer or reuse the one in ExtractionStage...
-                # Actually, `candidate_key` SHOULD already be in `cand` dict from ExtractionStage!
-                # Yes, ExtractionStage sets it.
+                # Strategy 1: Check if matches approved entity
+                if self._approved_lookup:
+                    matching_entity_id = self._approved_lookup.find_match(
+                        name=canonical_name,
+                        entity_type=cand_type_str,
+                        aliases=aliases,
+                    )
+                    if matching_entity_id:
+                        # Create MENTIONED_IN for cross-document linkage
+                        if document_id:
+                            try:
+                                self.neo4j_manager.create_mentioned_in_relationships(
+                                    matching_entity_id, [document_id]
+                                )
+                            except Exception as exc:
+                                logger.warning(
+                                    f"Failed to create MENTIONED_IN for auto-resolved entity: {exc}"
+                                )
+                        auto_resolved += 1
+                        logger.debug(
+                            f"Auto-resolved '{canonical_name}' ({cand_type_str}) "
+                            f"to entity {matching_entity_id}"
+                        )
+                        continue  # Skip candidate creation
 
+                # Normal candidate creation flow
                 key = str(cand.get("candidate_key") or "")
-                # If key is missing (shouldn't be), we might need to regenerate it.
-                # But ExtractionStage guarantees it.
 
                 event = EntityCandidate.provenance_event(
                     {
@@ -179,7 +234,7 @@ class StorageStage(PipelineStage):
                     candidate_key=key,
                     canonical_name=canonical_name,
                     candidate_type=cand_type,
-                    aliases=list(cand.get("aliases") or []),
+                    aliases=aliases,
                     description=str(cand.get("description") or ""),
                     confidence_score=float(cand.get("confidence") or 0.0),
                     mention_count=int(cand.get("mention_count") or 1),
@@ -193,7 +248,11 @@ class StorageStage(PipelineStage):
                     stored += 1
                 except Exception as exc:
                     logger.warning(f"Failed to store entity candidate: {exc}")
-        return stored
+
+        if auto_resolved > 0:
+            logger.info(f"Auto-resolved {auto_resolved} candidates to existing approved entities")
+
+        return stored, auto_resolved
 
     def _store_relationship_candidates(self, chunks: List[Any]) -> int:
         if not hasattr(self.neo4j_manager, "upsert_relationship_candidate_aggregate"):

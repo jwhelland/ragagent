@@ -84,9 +84,7 @@ class _FakeManager:
         self.entity_upserts.append({"id": entity_id, **properties})  # simplified tracking
         return True
 
-    def create_mentioned_in_relationships(
-        self, entity_id: str, document_ids: List[str]
-    ) -> int:
+    def create_mentioned_in_relationships(self, entity_id: str, document_ids: List[str]) -> int:
         self.mentioned_in_relationships.append((entity_id, list(document_ids)))
         return len(document_ids)
 

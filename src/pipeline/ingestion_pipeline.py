@@ -50,13 +50,16 @@ class IngestionPipeline:
     stored chunks and embeddings in both graph and vector databases.
     """
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, *, resolve_existing: bool = False) -> None:
         """Initialize the ingestion pipeline.
 
         Args:
             config: Application configuration
+            resolve_existing: If True, auto-resolve entity candidates that match
+                already-approved entities (creates MENTIONED_IN relationships)
         """
         self.config = config
+        self.resolve_existing = resolve_existing
         self._debug_logging = str(getattr(config.logging, "level", "INFO")).upper() == "DEBUG"
 
         # Managers
@@ -76,6 +79,7 @@ class IngestionPipeline:
             "rule_based_relationships_extracted": 0,
             "merged_entities_created": 0,
             "entity_candidates_stored": 0,
+            "entity_candidates_auto_resolved": 0,
             "relationship_candidates_stored": 0,
             "acronym_definitions_added": 0,
             "dedup_merge_suggestions": 0,
@@ -109,7 +113,12 @@ class IngestionPipeline:
             ChunkingStage(self.config),
             ExtractionStage(self.config),
             EmbeddingStage(self.config),
-            StorageStage(self.config, self.neo4j_manager, self.qdrant_manager),
+            StorageStage(
+                self.config,
+                self.neo4j_manager,
+                self.qdrant_manager,
+                resolve_existing=self.resolve_existing,
+            ),
         ]
 
         self.pipeline = Pipeline(stages)

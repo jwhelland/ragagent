@@ -94,6 +94,13 @@ def main() -> None:
         default=100,
         help="Max merge suggestions (per method)",
     )
+    parser.add_argument(
+        "--resolve-existing",
+        action="store_true",
+        default=False,
+        help="Auto-resolve candidates matching approved entities (Strategy 1). "
+        "Matching candidates are filtered from the report and tracked separately.",
+    )
     parser.add_argument("--no-viz", action="store_true", help="Do not write GraphViz DOT output")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
 
@@ -123,6 +130,7 @@ def main() -> None:
         max_clusters=int(args.max_clusters),
         enable_semantic_merge=bool(args.enable_semantic_merge),
         max_merge_suggestions=int(args.max_merge_suggestions),
+        resolve_existing=bool(args.resolve_existing),
     )
 
     output_dir = args.output_dir
@@ -140,6 +148,11 @@ def main() -> None:
         report.artifacts.get("report_markdown"),
         report.artifacts.get("report_html"),
     )
+    if report.auto_resolved:
+        logger.info(
+            "Auto-resolved {} candidates to existing entities (see report for details)",
+            len(report.auto_resolved),
+        )
 
 
 if __name__ == "__main__":
